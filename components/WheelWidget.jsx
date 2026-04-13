@@ -73,7 +73,7 @@ function useParticleSystem() {
 // ============================================================================
 // MAIN WIDGET
 // ============================================================================
-export default function WheelWidget() {
+export default function WheelWidget({ userId = null, username = null }) {
   // Game phases: 'spinning' → 'stopping' → 'result'
   const [phase, setPhase] = useState('spinning');
   const [result, setResult] = useState(null);
@@ -358,7 +358,7 @@ export default function WheelWidget() {
         </div>
 
         {/* Close button */}
-        <button type="button" onClick={() => setClosed(true)}
+        <button type="button" onClick={() => { setClosed(true); window.parent.postMessage({ type: 'bwanabet-wheel-close' }, '*'); }}
           className="absolute top-3 right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
           style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 2px 8px rgba(239,68,68,0.5)' }}>
           <X className="w-5 h-5 text-white" strokeWidth={3} />
