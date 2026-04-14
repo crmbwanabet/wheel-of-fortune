@@ -4,17 +4,19 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { X, Sparkles, Trophy } from 'lucide-react';
 
 // ============================================================================
-// DATA — 8 segments, weighted distribution
+// DATA — 10 segments: K10, K20, K50, K100, K200, Try Again Tomorrow ×5
 // ============================================================================
 const WHEEL_SEGMENTS = [
-  { id: 1, label: 'K10',               prize: { kwacha: 10 },  icon: '🪙', color: '#06b6d4', isLoss: false },
-  { id: 2, label: 'K50',               prize: { kwacha: 50 },  icon: '🪙', color: '#a855f7', isLoss: false },
-  { id: 3, label: 'Try Again\nTomorrow', prize: null,           icon: '😢', color: '#374151', isLoss: true },
-  { id: 4, label: 'K20',               prize: { kwacha: 20 },  icon: '🪙', color: '#22c55e', isLoss: false },
-  { id: 5, label: 'K100',              prize: { kwacha: 100 }, icon: '💰', color: '#eab308', isLoss: false },
-  { id: 6, label: 'K10',               prize: { kwacha: 10 },  icon: '🪙', color: '#ec4899', isLoss: false },
-  { id: 7, label: 'Try Again\nTomorrow', prize: null,           icon: '😢', color: '#374151', isLoss: true },
-  { id: 8, label: 'K20',               prize: { kwacha: 20 },  icon: '🪙', color: '#f97316', isLoss: false },
+  { id: 1,  label: 'K10',                prize: { kwacha: 10 },  icon: '🪙', color: '#06b6d4', isLoss: false },
+  { id: 2,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#374151', isLoss: true },
+  { id: 3,  label: 'K50',                prize: { kwacha: 50 },  icon: '🪙', color: '#a855f7', isLoss: false },
+  { id: 4,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#4b5563', isLoss: true },
+  { id: 5,  label: 'K200',               prize: { kwacha: 200 }, icon: '💰', color: '#eab308', isLoss: false },
+  { id: 6,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#374151', isLoss: true },
+  { id: 7,  label: 'K20',                prize: { kwacha: 20 },  icon: '🪙', color: '#22c55e', isLoss: false },
+  { id: 8,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#4b5563', isLoss: true },
+  { id: 9,  label: 'K100',               prize: { kwacha: 100 }, icon: '💰', color: '#f97316', isLoss: false },
+  { id: 10, label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#374151', isLoss: true },
 ];
 
 const NUM = WHEEL_SEGMENTS.length;
@@ -231,7 +233,7 @@ export default function WheelWidget({ userId = null, username = null }) {
   const isSpinning = phase === 'spinning' || phase === 'stopping';
 
   return (
-    <div className="relative w-full h-screen overflow-hidden flex items-center justify-center p-3" style={{ background: 'radial-gradient(ellipse at 50% 40%, #1a2038 0%, #0c0e1a 60%, #060810 100%)' }}>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
 
       {/* Particle canvas */}
       <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-[60]" />
@@ -318,8 +320,8 @@ export default function WheelWidget({ userId = null, username = null }) {
       {/* ============================================================ */}
       {/* MAIN CARD                                                    */}
       {/* ============================================================ */}
-      <div className="relative rounded-2xl w-full" style={{
-        maxWidth: 520,
+      <div className="relative rounded-2xl" style={{
+        width: 380, maxWidth: '95vw',
         background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
         boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
         border: '3px solid #3a3f52',
@@ -585,24 +587,28 @@ export default function WheelWidget({ userId = null, username = null }) {
                 {/* TEXT LABELS — radial text along each segment's center line */}
                 {WHEEL_SEGMENTS.map((seg, i) => {
                   const midAngle = i * SEG_ANGLE - 90 + SEG_ANGLE / 2;
-                  const displayLabel = seg.isLoss ? 'TRY AGAIN' : seg.label;
+                  if (seg.isLoss) {
+                    return (
+                      <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
+                        <text x={150 + 88} y={150 - 6} textAnchor="middle" dominantBaseline="central"
+                          fill="white" fontSize="9.5" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                          stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
+                          TRY AGAIN
+                        </text>
+                        <text x={150 + 88} y={150 + 6} textAnchor="middle" dominantBaseline="central"
+                          fill="white" fontSize="9.5" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                          stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
+                          TOMORROW
+                        </text>
+                      </g>
+                    );
+                  }
                   return (
                     <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
-                      <text
-                        x={150 + 90}
-                        y={150}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fill="white"
-                        fontSize={seg.isLoss ? "12" : "22"}
-                        fontWeight="900"
-                        fontFamily="Arial Black, Arial, sans-serif"
-                        stroke="rgba(0,0,0,0.6)"
-                        strokeWidth="3"
-                        paintOrder="stroke"
-                        letterSpacing={seg.isLoss ? "1" : "3"}
-                      >
-                        {displayLabel}
+                      <text x={150 + 85} y={150} textAnchor="middle" dominantBaseline="central"
+                        fill="white" fontSize="22" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                        stroke="rgba(0,0,0,0.6)" strokeWidth="3" paintOrder="stroke" letterSpacing="2">
+                        {seg.label}
                       </text>
                     </g>
                   );
