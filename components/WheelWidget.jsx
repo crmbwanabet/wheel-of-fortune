@@ -113,9 +113,11 @@ export default function WheelWidget({ userId = null, username = null }) {
   }, []);
 
   // Main animation loop — starts immediately on mount
+  // Uses a local `cancelled` flag for strict-mode safety (no stale ref race)
   useEffect(() => {
-    if (spinFrameRef.current) return;
+    let cancelled = false;
     const loop = (timestamp) => {
+      if (cancelled) return;
       // DECELERATING — time-based easing
       if (decelStartRef.current !== null) {
         const elapsed = timestamp - decelStartRef.current;
@@ -160,7 +162,10 @@ export default function WheelWidget({ userId = null, username = null }) {
       spinFrameRef.current = requestAnimationFrame(loop);
     };
     spinFrameRef.current = requestAnimationFrame(loop);
-    return () => { if (spinFrameRef.current) { cancelAnimationFrame(spinFrameRef.current); spinFrameRef.current = null; } };
+    return () => {
+      cancelled = true;
+      if (spinFrameRef.current) { cancelAnimationFrame(spinFrameRef.current); spinFrameRef.current = null; }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -174,10 +179,10 @@ export default function WheelWidget({ userId = null, username = null }) {
     const segment = WHEEL_SEGMENTS[winIndex];
     winSegmentRef.current = segment;
 
-    // Calculate target angle (pointer at top = 270° in wheel coordinates)
+    // Calculate target angle — pointer is at top, segments start at -90° (top)
     const segCenter = winIndex * SEG_ANGLE + SEG_ANGLE / 2;
     const jitter = (Math.random() - 0.5) * (SEG_ANGLE * 0.5);
-    const targetRemainder = (360 - segCenter + 270 + jitter + 360) % 360;
+    const targetRemainder = (360 - segCenter + jitter + 360) % 360;
 
     const currentAngle = spinAngleRef.current;
     let remaining = targetRemainder - (currentAngle % 360);
@@ -681,7 +686,28 @@ export default function WheelWidget({ userId = null, username = null }) {
               {phase === 'done' && spinsLeft <= 0 && !result && (
                 <div className="flex items-center gap-3">
                   <p className="text-gray-500 text-xs">No spins left!</p>
-                  <button type="button" onClick={() => { setSpinsLeft(1); }}
+                  <button type="button" onClick={() => {
+                      setSpinsLeft(1);
+                      setPhase('spinning');
+                      setPointerBouncing(true);
+                      decelStartRef.current = null;
+                      if (!spinFrameRef.current) {
+                        const loop = (timestamp) => {
+                          if (decelStartRef.current !== null) {
+                            const elapsed = timestamp - decelStartRef.current;
+                            const t = Math.min(elapsed / DECEL_DURATION, 1);
+                            spinAngleRef.current = decelFromRef.current + decelTotalRef.current * easeOutCubic(t);
+                            if (wheelRef.current) wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
+                            if (t >= 1) { spinFrameRef.current = null; return; }
+                          } else {
+                            spinAngleRef.current += SPIN_SPEED;
+                            if (wheelRef.current) wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
+                          }
+                          spinFrameRef.current = requestAnimationFrame(loop);
+                        };
+                        spinFrameRef.current = requestAnimationFrame(loop);
+                      }
+                    }}
                     className="px-4 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-lg font-bold text-xs hover:scale-105 active:scale-95 transition-all">
                     Reset (Demo)
                   </button>
