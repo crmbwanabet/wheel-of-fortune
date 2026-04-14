@@ -1,10 +1,7 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect, Suspense } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { X, Sparkles, Trophy } from 'lucide-react';
-import dynamic from 'next/dynamic';
-
-const Wheel3DCanvas = dynamic(() => import('./Wheel3D/Wheel3DCanvas'), { ssr: false });
 
 // ============================================================================
 // DATA — 10 segments: K10, K20, K50, K100, K200, Try Again Tomorrow ×5
@@ -96,6 +93,7 @@ export default function WheelWidget({ userId = null, username = null }) {
   // Spin refs
   const spinAngleRef = useRef(0);
   const spinFrameRef = useRef(null);
+  const wheelRef = useRef(null);
   // Deceleration refs
   const decelStartRef = useRef(null);   // timestamp when STOP pressed
   const decelFromRef = useRef(0);       // angle when STOP pressed
@@ -127,6 +125,10 @@ export default function WheelWidget({ userId = null, username = null }) {
         const progress = easeOutCubic(t);
         spinAngleRef.current = decelFromRef.current + decelTotalRef.current * progress;
 
+        if (wheelRef.current) {
+          wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
+        }
+
         if (t >= 1) {
           // Deceleration complete — show result
           decelStartRef.current = null;
@@ -153,7 +155,9 @@ export default function WheelWidget({ userId = null, username = null }) {
       } else {
         // FREE SPINNING — constant speed
         spinAngleRef.current += SPIN_SPEED;
-        // spinAngleRef updated — Three.js useFrame reads it
+        if (wheelRef.current) {
+          wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
+        }
       }
       spinFrameRef.current = requestAnimationFrame(loop);
     };
@@ -209,11 +213,11 @@ export default function WheelWidget({ userId = null, username = null }) {
           const elapsed = timestamp - decelStartRef.current;
           const t = Math.min(elapsed / DECEL_DURATION, 1);
           spinAngleRef.current = decelFromRef.current + decelTotalRef.current * easeOutCubic(t);
-          // spinAngleRef updated — Three.js useFrame reads it
+          if (wheelRef.current) wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
           if (t >= 1) { spinFrameRef.current = null; return; }
         } else {
           spinAngleRef.current += SPIN_SPEED;
-          // spinAngleRef updated — Three.js useFrame reads it
+          if (wheelRef.current) wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
         }
         spinFrameRef.current = requestAnimationFrame(loop);
       };
@@ -394,14 +398,105 @@ export default function WheelWidget({ userId = null, username = null }) {
             </div>
           </div>
 
-          {/* ============ WHEEL AREA — Three.js 3D ============ */}
+          {/* ============ WHEEL AREA ============ */}
           <div className="relative mx-auto" style={{ width: '100%', maxWidth: WHEEL_SIZE + 50, aspectRatio: '1' }}>
-            {/* Pointer overlay — sits above the 3D canvas */}
+
+            {/* === SPOTLIGHT behind wheel === */}
+            <div className="absolute pointer-events-none" style={{
+              inset: '-20%',
+              background: 'radial-gradient(circle at 50% 48%, rgba(200,210,230,0.12) 0%, rgba(150,160,180,0.06) 30%, transparent 60%)',
+            }} />
+
+            {/* Sparkle accents */}
+            <div className="absolute pointer-events-none text-white/40" style={{ top: '5%', left: '2%', fontSize: 18, animation: 'sparkle 2.5s 0.3s ease-in-out infinite' }}>✦</div>
+            <div className="absolute pointer-events-none text-white/30" style={{ top: '12%', right: '4%', fontSize: 14, animation: 'sparkle 2.5s 1s ease-in-out infinite' }}>✦</div>
+            <div className="absolute pointer-events-none text-white/25" style={{ bottom: '10%', left: '4%', fontSize: 12, animation: 'sparkle 2.5s 1.6s ease-in-out infinite' }}>✦</div>
+            <div className="absolute pointer-events-none text-white/35" style={{ bottom: '5%', right: '2%', fontSize: 16, animation: 'sparkle 2.5s 0.7s ease-in-out infinite' }}>✦</div>
+
+            {/* Drop shadow under wheel */}
+            <div className="absolute pointer-events-none rounded-full" style={{
+              left: '8%', right: '8%', bottom: '-2%', height: '12%',
+              background: 'radial-gradient(ellipse, rgba(0,0,0,0.35) 0%, transparent 70%)',
+              filter: 'blur(8px)',
+            }} />
+
+            {/* === CHROME FRAME === */}
+            <svg viewBox="0 0 400 400" className="absolute inset-0 w-full h-full z-20 pointer-events-none">
+              <defs>
+                <linearGradient id="chrome1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#e8e8e8" />
+                  <stop offset="12%" stopColor="#fff" />
+                  <stop offset="28%" stopColor="#888" />
+                  <stop offset="42%" stopColor="#e8e8e8" />
+                  <stop offset="55%" stopColor="#fff" />
+                  <stop offset="68%" stopColor="#999" />
+                  <stop offset="82%" stopColor="#e0e0e0" />
+                  <stop offset="100%" stopColor="#bbb" />
+                </linearGradient>
+                <linearGradient id="chrome2" x1="100%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#ddd" />
+                  <stop offset="25%" stopColor="#fff" />
+                  <stop offset="50%" stopColor="#777" />
+                  <stop offset="75%" stopColor="#e0e0e0" />
+                  <stop offset="100%" stopColor="#bbb" />
+                </linearGradient>
+                <filter id="chromeGlow" x="-8%" y="-8%" width="116%" height="116%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b" />
+                  <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+                <filter id="lightGlow" x="-150%" y="-150%" width="400%" height="400%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b" />
+                  <feMerge><feMergeNode in="b" /><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+              </defs>
+
+              {/* Thick outer chrome ring */}
+              <circle cx="200" cy="200" r="194" fill="none" stroke="url(#chrome1)" strokeWidth="12" filter="url(#chromeGlow)" />
+              {/* Dark channel for lights */}
+              <circle cx="200" cy="200" r="184" fill="none" stroke="#12151f" strokeWidth="10" />
+              {/* Inner chrome ring */}
+              <circle cx="200" cy="200" r="176" fill="none" stroke="url(#chrome2)" strokeWidth="6" />
+              {/* Dark inner edge */}
+              <circle cx="200" cy="200" r="171" fill="none" stroke="#1a1e2e" strokeWidth="2" />
+
+              {/* === CHASING LIGHTS === */}
+              {Array.from({ length: 36 }, (_, i) => {
+                const deg = i * 10 - 90;
+                const lR = 184;
+                const lx = 200 + lR * Math.cos(deg * Math.PI / 180);
+                const ly = 200 + lR * Math.sin(deg * Math.PI / 180);
+                const colors = ['#fbbf24','#ffffff','#ec4899','#ffffff','#a855f7','#ffffff','#22c55e','#ffffff','#3b82f6','#ffffff','#f97316','#ffffff'];
+                const c = colors[i % colors.length];
+                return (
+                  <circle key={`ol-${i}`} cx={lx} cy={ly} r="4" fill={c} filter="url(#lightGlow)">
+                    <animate attributeName="opacity" values="0.15;1;0.15" dur="2.4s" begin={`${(i * 0.067).toFixed(2)}s`} repeatCount="indefinite" />
+                    <animate attributeName="r" values="3;5.5;3" dur="2.4s" begin={`${(i * 0.067).toFixed(2)}s`} repeatCount="indefinite" />
+                  </circle>
+                );
+              })}
+
+              {/* Gold pegs at segment dividers */}
+              {WHEEL_SEGMENTS.map((_, i) => {
+                const a = i * SEG_ANGLE - 90;
+                const px = 200 + 175 * Math.cos(a * Math.PI / 180);
+                const py = 200 + 175 * Math.sin(a * Math.PI / 180);
+                return (
+                  <g key={`peg${i}`}>
+                    <circle cx={px} cy={py} r="5" fill="#1a1e2e" stroke="#b8860b" strokeWidth="1.2" />
+                    <circle cx={px} cy={py} r="3" fill="#fbbf24">
+                      {isSpinning && <animate attributeName="opacity" values="1;0.3;1" dur={`${0.3 + (i % 3) * 0.12}s`} repeatCount="indefinite" />}
+                    </circle>
+                  </g>
+                );
+              })}
+            </svg>
+
+            {/* === POINTER === */}
             <div className="absolute z-30" style={{
-              top: 0, left: '50%', transform: 'translateX(-50%)',
+              top: -4, left: '50%', transform: 'translateX(-50%)',
               animation: pointerBouncing ? 'pointerBounce 0.15s ease-in-out infinite' : 'none',
             }}>
-              <svg width="36" height="44" viewBox="0 0 40 48" style={{ filter: 'drop-shadow(0 3px 8px rgba(0,0,0,0.7))' }}>
+              <svg width="40" height="48" viewBox="0 0 40 48" style={{ filter: 'drop-shadow(0 3px 8px rgba(0,0,0,0.7))' }}>
                 <defs>
                   <linearGradient id="ptrGold" x1="0%" y1="0%" x2="100%" y2="100%">
                     <stop offset="0%" stopColor="#ffd700" />
@@ -417,19 +512,158 @@ export default function WheelWidget({ userId = null, username = null }) {
               </svg>
             </div>
 
-            {/* Three.js 3D Wheel */}
-            <Suspense fallback={
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="text-gray-500 text-sm animate-pulse">Loading wheel...</div>
-              </div>
-            }>
-              <Wheel3DCanvas
-                segments={WHEEL_SEGMENTS}
-                spinAngleRef={spinAngleRef}
-                phase={phase}
-                onStop={stopWheel}
-              />
-            </Suspense>
+            {/* === SPINNING WHEEL === */}
+            <div
+              ref={wheelRef}
+              className="absolute rounded-full overflow-hidden"
+              style={{
+                top: '13%', left: '13%', right: '13%', bottom: '13%',
+                willChange: isSpinning ? 'transform' : 'auto',
+              }}
+            >
+              <svg viewBox="0 0 300 300" className="w-full h-full">
+                <defs>
+                  <linearGradient id="segGloss" x1="50%" y1="0%" x2="50%" y2="100%">
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0.32" />
+                    <stop offset="30%" stopColor="#fff" stopOpacity="0.1" />
+                    <stop offset="50%" stopColor="#000" stopOpacity="0" />
+                    <stop offset="100%" stopColor="#000" stopOpacity="0.28" />
+                  </linearGradient>
+                  <radialGradient id="segDepth" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0.08" />
+                    <stop offset="30%" stopColor="#000" stopOpacity="0" />
+                    <stop offset="80%" stopColor="#000" stopOpacity="0.15" />
+                    <stop offset="100%" stopColor="#000" stopOpacity="0.3" />
+                  </radialGradient>
+                  <linearGradient id="segShimmer" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0" />
+                    <stop offset="42%" stopColor="#fff" stopOpacity="0" />
+                    <stop offset="50%" stopColor="#fff" stopOpacity="0.14" />
+                    <stop offset="58%" stopColor="#fff" stopOpacity="0" />
+                    <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+                  </linearGradient>
+                  <radialGradient id="innerGlow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0.4" />
+                    <stop offset="12%" stopColor="#fff" stopOpacity="0.15" />
+                    <stop offset="35%" stopColor="#fff" stopOpacity="0" />
+                    <stop offset="100%" stopColor="#000" stopOpacity="0" />
+                  </radialGradient>
+                  <radialGradient id="rimLight" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#000" stopOpacity="0" />
+                    <stop offset="85%" stopColor="#000" stopOpacity="0" />
+                    <stop offset="94%" stopColor="#fff" stopOpacity="0.08" />
+                    <stop offset="100%" stopColor="#fff" stopOpacity="0.12" />
+                  </radialGradient>
+                </defs>
+
+                {/* Segments */}
+                {WHEEL_SEGMENTS.map((seg, i) => {
+                  const sA = i * SEG_ANGLE - 90;
+                  const eA = sA + SEG_ANGLE;
+                  const s = { x: 150 + 148 * Math.cos(sA * Math.PI / 180), y: 150 + 148 * Math.sin(sA * Math.PI / 180) };
+                  const e = { x: 150 + 148 * Math.cos(eA * Math.PI / 180), y: 150 + 148 * Math.sin(eA * Math.PI / 180) };
+                  const path = `M 150 150 L ${s.x} ${s.y} A 148 148 0 0 1 ${e.x} ${e.y} Z`;
+                  return (
+                    <g key={seg.id}>
+                      <path d={path} fill={seg.color} />
+                      <path d={path} fill="url(#segGloss)" />
+                      <path d={path} fill="url(#segDepth)" />
+                      <path d={path} fill="url(#segShimmer)" />
+                    </g>
+                  );
+                })}
+
+                {/* Dividers */}
+                {WHEEL_SEGMENTS.map((_, i) => {
+                  const a = i * SEG_ANGLE - 90;
+                  const ex = 150 + 148 * Math.cos(a * Math.PI / 180);
+                  const ey = 150 + 148 * Math.sin(a * Math.PI / 180);
+                  return (
+                    <g key={`d${i}`}>
+                      <line x1="150" y1="150" x2={ex} y2={ey} stroke="rgba(0,0,0,0.4)" strokeWidth="2.5" />
+                      <line x1="150" y1="150" x2={ex} y2={ey} stroke="rgba(255,255,255,0.06)" strokeWidth="1" transform="translate(0.5,0.5)" />
+                    </g>
+                  );
+                })}
+
+                <circle cx="150" cy="150" r="148" fill="url(#rimLight)" />
+                <circle cx="150" cy="150" r="148" fill="url(#innerGlow)" />
+
+                {/* TEXT LABELS — radial text along each segment's center line */}
+                {WHEEL_SEGMENTS.map((seg, i) => {
+                  const midAngle = i * SEG_ANGLE - 90 + SEG_ANGLE / 2;
+                  if (seg.isLoss) {
+                    return (
+                      <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
+                        <text x={150 + 88} y={150 - 6} textAnchor="middle" dominantBaseline="central"
+                          fill="white" fontSize="9.5" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                          stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
+                          TRY AGAIN
+                        </text>
+                        <text x={150 + 88} y={150 + 6} textAnchor="middle" dominantBaseline="central"
+                          fill="white" fontSize="9.5" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                          stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
+                          TOMORROW
+                        </text>
+                      </g>
+                    );
+                  }
+                  return (
+                    <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
+                      <text x={150 + 85} y={150} textAnchor="middle" dominantBaseline="central"
+                        fill="white" fontSize="22" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                        stroke="rgba(0,0,0,0.6)" strokeWidth="3" paintOrder="stroke" letterSpacing="2">
+                        {seg.label}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+
+            {/* === CENTER HUB with STOP button === */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20" style={{ width: '22%', height: '22%' }}>
+              <svg viewBox="0 0 90 90" className="w-full h-full">
+                <defs>
+                  <radialGradient id="hubSphere" cx="38%" cy="30%" r="65%">
+                    <stop offset="0%" stopColor="#777" />
+                    <stop offset="15%" stopColor="#555" />
+                    <stop offset="40%" stopColor="#2a2a2a" />
+                    <stop offset="70%" stopColor="#111" />
+                    <stop offset="100%" stopColor="#000" />
+                  </radialGradient>
+                  <linearGradient id="hubChrome" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#ddd" />
+                    <stop offset="20%" stopColor="#fff" />
+                    <stop offset="45%" stopColor="#777" />
+                    <stop offset="70%" stopColor="#e0e0e0" />
+                    <stop offset="100%" stopColor="#aaa" />
+                  </linearGradient>
+                  <radialGradient id="hubSpec" cx="35%" cy="25%">
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0.5" />
+                    <stop offset="40%" stopColor="#fff" stopOpacity="0.08" />
+                    <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+                  </radialGradient>
+                </defs>
+                <circle cx="45" cy="45" r="44" fill="none" stroke="url(#hubChrome)" strokeWidth="5" />
+                <circle cx="45" cy="45" r="39" fill="url(#hubSphere)" />
+                <ellipse cx="38" cy="34" rx="16" ry="12" fill="url(#hubSpec)" />
+              </svg>
+              <button
+                type="button"
+                onClick={phase === 'spinning' ? stopWheel : undefined}
+                disabled={phase !== 'spinning'}
+                className={`absolute inset-0 rounded-full flex items-center justify-center transition-all duration-200 ${
+                  phase === 'spinning' ? 'hover:scale-110 active:scale-90 cursor-pointer' : 'cursor-default'
+                }`}
+              >
+                <span className={`font-black text-base sm:text-lg tracking-wider transition-opacity duration-300 ${phase !== 'spinning' ? 'opacity-40' : ''}`} style={{
+                  background: 'linear-gradient(180deg, #ff9999 0%, #ef4444 40%, #b91c1c 100%)',
+                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.9))',
+                }}>STOP</span>
+              </button>
+            </div>
           </div>
 
           {/* ============ BOTTOM ROW ============ */}
@@ -463,11 +697,11 @@ export default function WheelWidget({ userId = null, username = null }) {
                             const elapsed = timestamp - decelStartRef.current;
                             const t = Math.min(elapsed / DECEL_DURATION, 1);
                             spinAngleRef.current = decelFromRef.current + decelTotalRef.current * easeOutCubic(t);
-                            // spinAngleRef updated — Three.js useFrame reads it
+                            if (wheelRef.current) wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
                             if (t >= 1) { spinFrameRef.current = null; return; }
                           } else {
                             spinAngleRef.current += SPIN_SPEED;
-                            // spinAngleRef updated — Three.js useFrame reads it
+                            if (wheelRef.current) wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
                           }
                           spinFrameRef.current = requestAnimationFrame(loop);
                         };
