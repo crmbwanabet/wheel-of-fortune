@@ -7,9 +7,8 @@ import WheelWidget from '@/components/WheelWidget';
 function WheelPage() {
   const params = useSearchParams();
   const userId = params.get('userId') || null;
-  const username = params.get('username') || null;
 
-  return <WheelWidget userId={userId} username={username} />;
+  return <WheelWidget prefillUserId={userId} />;
 }
 
 export default function Home() {

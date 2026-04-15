@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { X, Sparkles, Trophy } from 'lucide-react';
+import { X, Sparkles } from 'lucide-react';
+import { generateFingerprint } from '@/lib/fingerprint';
 
 // ============================================================================
 // DATA — 10 segments: K10, K20, K50, K100, K200, Try Again Tomorrow ×5
@@ -21,6 +22,34 @@ const WHEEL_SEGMENTS = [
 
 const NUM = WHEEL_SEGMENTS.length;
 const SEG_ANGLE = 360 / NUM;
+
+// ============================================================================
+// LOCALSTORAGE — 6am CAT reset
+// ============================================================================
+const STORAGE_KEY = 'bwanabet_wheel_spin';
+
+function getWheelDayClient() {
+  const now = new Date();
+  const catMs = now.getTime() + (2 * 60 * 60 * 1000);
+  const catDate = new Date(catMs);
+  if (catDate.getUTCHours() < 6) {
+    catDate.setUTCDate(catDate.getUTCDate() - 1);
+  }
+  return catDate.toISOString().split('T')[0];
+}
+
+function hasSpunToday() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return false;
+    const { day } = JSON.parse(stored);
+    return day === getWheelDayClient();
+  } catch { return false; }
+}
+
+function markSpun() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ day: getWheelDayClient() }));
+}
 
 // ============================================================================
 // PARTICLE SYSTEM
@@ -75,20 +104,21 @@ function useParticleSystem() {
 // ============================================================================
 // MAIN WIDGET
 // ============================================================================
-export default function WheelWidget({ userId = null, username = null }) {
-  // Game phases: 'spinning' → 'stopping' → 'result'
-  const [phase, setPhase] = useState('spinning');
-  const [result, setResult] = useState(null);
+export default function WheelWidget({ prefillUserId = null }) {
+  // Screen flow: checking → prompt → spinning → stopping → result → done
+  const [screen, setScreen] = useState('checking');
+  const [customerId, setCustomerId] = useState(prefillUserId || '');
+  const [validationError, setValidationError] = useState('');
+  const [validating, setValidating] = useState(false);
+  const [spinResult, setSpinResult] = useState(null);
   const [showFlash, setShowFlash] = useState(false);
   const [pointerBouncing, setPointerBouncing] = useState(true);
   const [wheelConfetti, setWheelConfetti] = useState(false);
-  const [spinsLeft, setSpinsLeft] = useState(1);
-  const [totalWinnings, setTotalWinnings] = useState({ kwacha: 0 });
-  const [history, setHistory] = useState([]);
-  const [showHistory, setShowHistory] = useState(false);
   const [closed, setClosed] = useState(false);
   const { canvasRef, spawnParticles, startLoop } = useParticleSystem();
   const [floatingNums, setFloatingNums] = useState([]);
+
+  const fingerprintRef = useRef(null);
 
   // Spin refs
   const spinAngleRef = useRef(0);
@@ -99,6 +129,7 @@ export default function WheelWidget({ userId = null, username = null }) {
   const decelFromRef = useRef(0);       // angle when STOP pressed
   const decelTotalRef = useRef(0);      // total degrees to travel during decel
   const winSegmentRef = useRef(null);
+  const screenRef = useRef(screen);
 
   const DECEL_DURATION = 3500; // 3.5 seconds
   const SPIN_SPEED = 8;       // degrees per frame at full speed
@@ -106,15 +137,32 @@ export default function WheelWidget({ userId = null, username = null }) {
   // Ease-out cubic: fast start, gradual stop
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
+  // Keep screenRef in sync
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+
   const spawnFloatingNumber = useCallback((text, x, y, color = '#fbbf24') => {
     const id = Date.now() + Math.random();
     setFloatingNums(prev => [...prev, { id, text, x, y, color }]);
     setTimeout(() => setFloatingNums(prev => prev.filter(n => n.id !== id)), 1200);
   }, []);
 
-  // Main animation loop — starts immediately on mount
-  // Uses a local `cancelled` flag for strict-mode safety (no stale ref race)
+  // On mount: check localStorage + generate fingerprint
   useEffect(() => {
+    generateFingerprint().then(fp => { fingerprintRef.current = fp; }).catch(() => {});
+
+    if (hasSpunToday()) {
+      setScreen('done');
+    } else {
+      setScreen('prompt');
+    }
+  }, []);
+
+  // Main animation loop — runs when screen is spinning/stopping/result
+  useEffect(() => {
+    if (screen !== 'spinning' && screen !== 'stopping' && screen !== 'result') return;
+    // Only start the loop when transitioning TO spinning
+    if (screen !== 'spinning') return;
+
     let cancelled = false;
     const loop = (timestamp) => {
       if (cancelled) return;
@@ -133,10 +181,9 @@ export default function WheelWidget({ userId = null, username = null }) {
           // Deceleration complete — show result
           decelStartRef.current = null;
           const segment = winSegmentRef.current;
-          setPhase('result');
+          setScreen('result');
           setPointerBouncing(false);
-          setResult(segment);
-          setSpinsLeft(prev => prev - 1);
+          setSpinResult(segment);
 
           if (segment && !segment.isLoss) {
             setShowFlash(true);
@@ -167,76 +214,216 @@ export default function WheelWidget({ userId = null, username = null }) {
       if (spinFrameRef.current) { cancelAnimationFrame(spinFrameRef.current); spinFrameRef.current = null; }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [screen === 'spinning']);
 
-  // STOP — begin time-based deceleration
-  const stopWheel = useCallback(() => {
-    if (phase !== 'spinning') return;
-    setPhase('stopping');
-
-    // Pick a winner
-    const winIndex = Math.floor(Math.random() * NUM);
-    const segment = WHEEL_SEGMENTS[winIndex];
-    winSegmentRef.current = segment;
-
-    // Calculate target angle — pointer is at top, segments start at -90° (top)
-    const segCenter = winIndex * SEG_ANGLE + SEG_ANGLE / 2;
-    const jitter = (Math.random() - 0.5) * (SEG_ANGLE * 0.5);
-    const targetRemainder = (360 - segCenter + jitter + 360) % 360;
-
-    const currentAngle = spinAngleRef.current;
-    let remaining = targetRemainder - (currentAngle % 360);
-    if (remaining <= 0) remaining += 360;
-    // Add 2-3 extra full rotations for visual satisfaction
-    const extraSpins = (2 + Math.floor(Math.random() * 2)) * 360;
-
-    decelFromRef.current = currentAngle;
-    decelTotalRef.current = extraSpins + remaining;
-    decelStartRef.current = performance.now();
-  }, [phase]);
-
-  // CLAIM
-  const claimPrize = useCallback(() => {
-    if (!result) return;
-    if (result.prize) {
-      setTotalWinnings(prev => ({ kwacha: prev.kwacha + (result.prize.kwacha || 0) }));
+  // Validate customer ID and start playing
+  const handleValidateAndPlay = useCallback(async () => {
+    const id = customerId.trim();
+    if (!id) {
+      setValidationError('Please enter your BwanaBet ID');
+      return;
     }
-    setHistory(prev => [{ ...result, time: new Date().toLocaleTimeString() }, ...prev]);
-    setResult(null);
-    // Restart spinning if spins remain
-    if (spinsLeft > 1) {
-      setPhase('spinning');
+    setValidating(true);
+    setValidationError('');
+    try {
+      const res = await fetch('/api/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId: id, fingerprint: fingerprintRef.current }),
+      });
+      const data = await res.json();
+      if (!data.valid) {
+        setValidationError(data.error || 'Invalid ID. Please check and try again.');
+        setValidating(false);
+        return;
+      }
+      // Valid — start spinning
+      setValidating(false);
+      setScreen('spinning');
       setPointerBouncing(true);
-      decelStartRef.current = null;
-      const loop = (timestamp) => {
-        if (decelStartRef.current !== null) {
-          const elapsed = timestamp - decelStartRef.current;
-          const t = Math.min(elapsed / DECEL_DURATION, 1);
-          spinAngleRef.current = decelFromRef.current + decelTotalRef.current * easeOutCubic(t);
-          if (wheelRef.current) wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
-          if (t >= 1) { spinFrameRef.current = null; return; }
-        } else {
-          spinAngleRef.current += SPIN_SPEED;
-          if (wheelRef.current) wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
-        }
-        spinFrameRef.current = requestAnimationFrame(loop);
-      };
-      spinFrameRef.current = requestAnimationFrame(loop);
-    } else {
-      setPhase('done');
+    } catch (err) {
+      setValidationError('Network error. Please try again.');
+      setValidating(false);
     }
-    if (!result.isLoss) {
+  }, [customerId]);
+
+  // STOP — call server, then begin time-based deceleration
+  const stopWheel = useCallback(async () => {
+    if (screenRef.current !== 'spinning') return;
+    setScreen('stopping');
+
+    try {
+      const res = await fetch('/api/spin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId: customerId.trim(), fingerprint: fingerprintRef.current }),
+      });
+      const data = await res.json();
+
+      if (data.error === 'already_spun') {
+        markSpun();
+        setScreen('done');
+        return;
+      }
+
+      if (data.error) {
+        // Fallback: treat as loss
+        setScreen('done');
+        return;
+      }
+
+      const winIndex = data.segmentIndex;
+      const segment = WHEEL_SEGMENTS[winIndex];
+      winSegmentRef.current = segment;
+
+      // Mark as spun in localStorage
+      markSpun();
+
+      // Calculate target angle — pointer is at top, segments start at -90° (top)
+      const segCenter = winIndex * SEG_ANGLE + SEG_ANGLE / 2;
+      const jitter = (Math.random() - 0.5) * (SEG_ANGLE * 0.5);
+      const targetRemainder = (360 - segCenter + jitter + 360) % 360;
+
+      const currentAngle = spinAngleRef.current;
+      let remaining = targetRemainder - (currentAngle % 360);
+      if (remaining <= 0) remaining += 360;
+      // Add 2-3 extra full rotations for visual satisfaction
+      const extraSpins = (2 + Math.floor(Math.random() * 2)) * 360;
+
+      decelFromRef.current = currentAngle;
+      decelTotalRef.current = extraSpins + remaining;
+      decelStartRef.current = performance.now();
+    } catch (err) {
+      // Network error during spin
+      setScreen('done');
+    }
+  }, [customerId]);
+
+  // CLAIM — transition to done
+  const claimPrize = useCallback(() => {
+    if (!spinResult) return;
+    setSpinResult(null);
+    setScreen('done');
+    if (spinResult && !spinResult.isLoss) {
       const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
       spawnParticles(cx, cy, 20, { spread: 300, speed: 10, life: 35, gravity: 0.22, emojis: ['🎉','🪙','💰'] });
       startLoop();
     }
-  }, [result, spawnParticles, startLoop]);
+  }, [spinResult, spawnParticles, startLoop]);
+
+  const handleClose = useCallback(() => {
+    setClosed(true);
+    window.parent.postMessage({ type: 'bwanabet-wheel-close' }, '*');
+  }, []);
 
   if (closed) return null;
 
   const WHEEL_SIZE = 320;
-  const isSpinning = phase === 'spinning' || phase === 'stopping';
+  const isSpinning = screen === 'spinning' || screen === 'stopping';
 
+  // ============================================================
+  // CHECKING SCREEN
+  // ============================================================
+  if (screen === 'checking') {
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
+        <div className="text-gray-400 text-sm">Loading...</div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  // PROMPT SCREEN — ID input
+  // ============================================================
+  if (screen === 'prompt') {
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
+        <div className="relative text-center p-8 rounded-2xl max-w-xs w-full mx-4" style={{
+          background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
+          border: '3px solid #3a3f52',
+          boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
+        }}>
+          {/* Close button */}
+          <button type="button" onClick={handleClose}
+            className="absolute top-3 right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
+            style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 2px 8px rgba(239,68,68,0.5)' }}>
+            <X className="w-5 h-5 text-white" strokeWidth={3} />
+          </button>
+
+          <div className="text-5xl mb-3">🎡</div>
+          <h1 className="text-3xl font-black mb-1" style={{
+            background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
+          }}>SPIN & WIN</h1>
+          <p className="text-gray-400 text-sm mb-5">Enter your BwanaBet ID to play</p>
+
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={customerId}
+            onChange={e => { setCustomerId(e.target.value); setValidationError(''); }}
+            onKeyDown={e => { if (e.key === 'Enter' && !validating) handleValidateAndPlay(); }}
+            placeholder="Your BwanaBet ID"
+            className="w-full px-4 py-3 rounded-xl text-center text-lg font-bold text-white placeholder-gray-500 outline-none transition-all focus:ring-2 focus:ring-amber-400/50"
+            style={{
+              background: 'rgba(0,0,0,0.4)',
+              border: validationError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.1)',
+            }}
+            disabled={validating}
+          />
+
+          {validationError && (
+            <p className="text-red-400 text-xs mt-2 font-medium">{validationError}</p>
+          )}
+
+          <button
+            type="button"
+            onClick={handleValidateAndPlay}
+            disabled={validating}
+            className="w-full mt-4 py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{
+              background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+              boxShadow: '0 4px 15px rgba(245,158,11,0.3)',
+            }}
+          >
+            {validating ? 'Checking...' : 'Play!'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  // DONE SCREEN — Try Again Tomorrow
+  // ============================================================
+  if (screen === 'done') {
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
+        <div className="relative text-center p-8 rounded-2xl max-w-xs w-full mx-4" style={{
+          background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
+          border: '3px solid #3a3f52',
+          boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
+        }}>
+          {/* Close button */}
+          <button type="button" onClick={handleClose}
+            className="absolute top-3 right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
+            style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 2px 8px rgba(239,68,68,0.5)' }}>
+            <X className="w-5 h-5 text-white" strokeWidth={3} />
+          </button>
+
+          <div className="text-5xl mb-3">😢</div>
+          <h2 className="text-2xl font-black text-gray-200 mb-2">Try Again Tomorrow!</h2>
+          <p className="text-gray-400 text-sm">Come back after 6:00 AM for a new spin.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  // WHEEL SCREEN — spinning / stopping / result
+  // ============================================================
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
 
@@ -282,18 +469,18 @@ export default function WheelWidget({ userId = null, username = null }) {
       {/* ============================================================ */}
       {/* WIN / LOSS RESULT OVERLAY                                    */}
       {/* ============================================================ */}
-      {result && (
+      {spinResult && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
           <div className="text-center p-8 rounded-3xl max-w-xs w-full mx-4" style={{
             background: 'linear-gradient(180deg, rgba(30,40,60,0.95), rgba(15,20,35,0.98))',
-            border: `2px solid ${result.isLoss ? 'rgba(156,163,175,0.3)' : 'rgba(251,191,36,0.3)'}`,
-            boxShadow: result.isLoss
+            border: `2px solid ${spinResult.isLoss ? 'rgba(156,163,175,0.3)' : 'rgba(251,191,36,0.3)'}`,
+            boxShadow: spinResult.isLoss
               ? '0 0 60px rgba(100,100,100,0.1), 0 20px 60px rgba(0,0,0,0.5)'
               : '0 0 60px rgba(251,191,36,0.15), 0 20px 60px rgba(0,0,0,0.5)',
             animation: 'resultZoom 0.5s cubic-bezier(0.34,1.56,0.64,1) both',
           }}>
-            <div className="text-6xl mb-3" style={{ animation: 'float 2s ease-in-out infinite' }}>{result.icon}</div>
-            {result.isLoss ? (
+            <div className="text-6xl mb-3" style={{ animation: 'float 2s ease-in-out infinite' }}>{spinResult.icon}</div>
+            {spinResult.isLoss ? (
               <>
                 <div className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-1">Better Luck</div>
                 <div className="text-2xl font-black text-gray-300 mb-5">Try Again Tomorrow</div>
@@ -302,7 +489,7 @@ export default function WheelWidget({ userId = null, username = null }) {
               <>
                 <div className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-1">You Won</div>
                 <div className="text-3xl font-black text-yellow-400 mb-5" style={{ textShadow: '0 0 20px rgba(251,191,36,0.5)' }}>
-                  K{result.prize.kwacha}
+                  K{spinResult.prize.kwacha}
                 </div>
               </>
             )}
@@ -310,13 +497,13 @@ export default function WheelWidget({ userId = null, username = null }) {
               type="button"
               onClick={claimPrize}
               className={`w-full py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 ${
-                result.isLoss
+                spinResult.isLoss
                   ? 'bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-500/20'
                   : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-green-500/30'
               }`}
-              style={result.isLoss ? {} : { '--btn-shadow': '#065F46', '--btn-glow': 'rgba(16,185,129,0.3)', '--btn-glow2': 'rgba(16,185,129,0.15)', animation: 'collectBtnPulse 2s ease-in-out infinite' }}
+              style={spinResult.isLoss ? {} : { '--btn-shadow': '#065F46', '--btn-glow': 'rgba(16,185,129,0.3)', '--btn-glow2': 'rgba(16,185,129,0.15)', animation: 'collectBtnPulse 2s ease-in-out infinite' }}
             >
-              {result.isLoss ? 'OK' : 'Claim Prize!'}
+              {spinResult.isLoss ? 'OK' : 'Claim Prize!'}
             </button>
           </div>
         </div>
@@ -365,7 +552,7 @@ export default function WheelWidget({ userId = null, username = null }) {
         </div>
 
         {/* Close button */}
-        <button type="button" onClick={() => { setClosed(true); window.parent.postMessage({ type: 'bwanabet-wheel-close' }, '*'); }}
+        <button type="button" onClick={handleClose}
           className="absolute top-3 right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
           style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 2px 8px rgba(239,68,68,0.5)' }}>
           <X className="w-5 h-5 text-white" strokeWidth={3} />
@@ -390,11 +577,6 @@ export default function WheelWidget({ userId = null, username = null }) {
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                 filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
               }}>WIN</h1>
-            </div>
-            <div className="flex flex-col items-end gap-1 mt-1">
-              {totalWinnings.kwacha > 0 && (
-                <div className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.25)' }}>🪙 K{totalWinnings.kwacha}</div>
-              )}
             </div>
           </div>
 
@@ -665,13 +847,13 @@ export default function WheelWidget({ userId = null, username = null }) {
               </svg>
               <button
                 type="button"
-                onClick={phase === 'spinning' ? stopWheel : undefined}
-                disabled={phase !== 'spinning'}
+                onClick={screen === 'spinning' ? stopWheel : undefined}
+                disabled={screen !== 'spinning'}
                 className={`absolute inset-0 rounded-full flex items-center justify-center transition-all duration-200 ${
-                  phase === 'spinning' ? 'hover:scale-110 active:scale-90 cursor-pointer' : 'cursor-default'
+                  screen === 'spinning' ? 'hover:scale-110 active:scale-90 cursor-pointer' : 'cursor-default'
                 }`}
               >
-                <span className={`font-black text-base sm:text-lg tracking-wider transition-opacity duration-300 ${phase !== 'spinning' ? 'opacity-40' : ''}`} style={{
+                <span className={`font-black text-base sm:text-lg tracking-wider transition-opacity duration-300 ${screen !== 'spinning' ? 'opacity-40' : ''}`} style={{
                   background: 'linear-gradient(180deg, #ff9999 0%, #ef4444 40%, #b91c1c 100%)',
                   WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                   filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.9))',
@@ -681,87 +863,22 @@ export default function WheelWidget({ userId = null, username = null }) {
           </div>
 
           {/* ============ BOTTOM ROW ============ */}
-          <div className="flex items-center justify-between mt-2">
-            <div className="flex-1 min-w-0">
-              {phase === 'spinning' && (
-                <div className="flex items-center justify-center gap-2 text-gray-400 py-1">
-                  <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-                  <span className="font-bold text-sm tracking-wide">Tap STOP to win!</span>
-                  <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-                </div>
-              )}
-              {phase === 'stopping' && (
-                <div className="flex items-center justify-center gap-2 text-gray-400 py-1">
-                  <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-                  <span className="font-bold text-sm tracking-wide">Slowing down...</span>
-                  <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-                </div>
-              )}
-              {phase === 'done' && spinsLeft <= 0 && !result && (
-                <div className="flex items-center gap-3">
-                  <p className="text-gray-500 text-xs">No spins left!</p>
-                  <button type="button" onClick={() => {
-                      setSpinsLeft(1);
-                      setPhase('spinning');
-                      setPointerBouncing(true);
-                      decelStartRef.current = null;
-                      if (!spinFrameRef.current) {
-                        const loop = (timestamp) => {
-                          if (decelStartRef.current !== null) {
-                            const elapsed = timestamp - decelStartRef.current;
-                            const t = Math.min(elapsed / DECEL_DURATION, 1);
-                            spinAngleRef.current = decelFromRef.current + decelTotalRef.current * easeOutCubic(t);
-                            if (wheelRef.current) wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
-                            if (t >= 1) { spinFrameRef.current = null; return; }
-                          } else {
-                            spinAngleRef.current += SPIN_SPEED;
-                            if (wheelRef.current) wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
-                          }
-                          spinFrameRef.current = requestAnimationFrame(loop);
-                        };
-                        spinFrameRef.current = requestAnimationFrame(loop);
-                      }
-                    }}
-                    className="px-4 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-lg font-bold text-xs hover:scale-105 active:scale-95 transition-all">
-                    Reset (Demo)
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Spins counter */}
-            <div className="flex-shrink-0 ml-3">
-              <div className="px-5 py-2.5 rounded-lg font-bold text-sm sm:text-base" style={{ background: '#111', border: '1px solid #333' }}>
-                Spins: {spinsLeft}
+          <div className="flex items-center justify-center mt-2">
+            {screen === 'spinning' && (
+              <div className="flex items-center justify-center gap-2 text-gray-400 py-1">
+                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+                <span className="font-bold text-sm tracking-wide">Tap STOP to win!</span>
+                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
               </div>
-            </div>
+            )}
+            {screen === 'stopping' && (
+              <div className="flex items-center justify-center gap-2 text-gray-400 py-1">
+                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+                <span className="font-bold text-sm tracking-wide">Slowing down...</span>
+                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+              </div>
+            )}
           </div>
-
-          {/* History */}
-          {history.length > 0 && (
-            <div className="mt-2">
-              <button type="button" onClick={() => setShowHistory(!showHistory)}
-                className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <span className="flex items-center gap-1.5 text-gray-400">
-                  <Trophy className="w-3 h-3 text-amber-400" /> History ({history.length})
-                </span>
-                <span className="text-gray-600">{showHistory ? '▲' : '▼'}</span>
-              </button>
-              {showHistory && (
-                <div className="mt-1.5 space-y-1 max-h-24 overflow-y-auto" style={{ animation: 'scaleIn 0.2s ease-out' }}>
-                  {history.map((h, i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-1.5 rounded text-[10px]" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                      <span className="flex items-center gap-1.5">
-                        <span>{h.icon}</span>
-                        <span className="font-semibold text-gray-300">{h.isLoss ? 'Try Again Tomorrow' : `K${h.prize.kwacha}`}</span>
-                      </span>
-                      <span className="text-gray-600">{h.time}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>
