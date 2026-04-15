@@ -8,16 +8,16 @@ import { generateFingerprint } from '@/lib/fingerprint';
 // DATA — 10 segments: K10, K20, K50, K100, K200, Try Again Tomorrow ×5
 // ============================================================================
 const WHEEL_SEGMENTS = [
-  { id: 1,  label: 'K10',                prize: { kwacha: 10 },  icon: '🪙', color: '#00e5ff', isLoss: false },
-  { id: 2,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#78909c', isLoss: true },
-  { id: 3,  label: 'K50',                prize: { kwacha: 50 },  icon: '🪙', color: '#d500f9', isLoss: false },
-  { id: 4,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#78909c', isLoss: true },
-  { id: 5,  label: 'K200',               prize: { kwacha: 200 }, icon: '💰', color: '#ffd600', isLoss: false },
-  { id: 6,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#78909c', isLoss: true },
-  { id: 7,  label: 'K20',                prize: { kwacha: 20 },  icon: '🪙', color: '#00e676', isLoss: false },
-  { id: 8,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#78909c', isLoss: true },
-  { id: 9,  label: 'K100',               prize: { kwacha: 100 }, icon: '💰', color: '#ff6d00', isLoss: false },
-  { id: 10, label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#78909c', isLoss: true },
+  { id: 1,  label: 'K10',                prize: { kwacha: 10 },  color: '#00e5ff', isLoss: false },
+  { id: 2,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
+  { id: 3,  label: 'K50',                prize: { kwacha: 50 },  color: '#d500f9', isLoss: false },
+  { id: 4,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
+  { id: 5,  label: 'K200',               prize: { kwacha: 200 }, color: '#ffd600', isLoss: false },
+  { id: 6,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
+  { id: 7,  label: 'K20',                prize: { kwacha: 20 },  color: '#00e676', isLoss: false },
+  { id: 8,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
+  { id: 9,  label: 'K100',               prize: { kwacha: 100 }, color: '#ff6d00', isLoss: false },
+  { id: 10, label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
 ];
 
 const NUM = WHEEL_SEGMENTS.length;
@@ -52,22 +52,25 @@ function markSpun() {
 }
 
 // ============================================================================
-// PARTICLE SYSTEM
+// PARTICLE SYSTEM — colored shapes (no emojis)
 // ============================================================================
+const PARTICLE_COLORS = ['#fbbf24', '#a855f7', '#06b6d4', '#ec4899', '#22c55e'];
+
 function useParticleSystem() {
   const canvasRef = useRef(null);
   const particlesRef = useRef([]);
   const animFrameRef = useRef(null);
 
   const spawnParticles = useCallback((x, y, count, config = {}) => {
-    const { spread = 200, speed = 8, life = 40, gravity = 0.18, emojis = ['🪙','✨','⭐'], size = 20 } = config;
+    const { spread = 200, speed = 8, life = 40, gravity = 0.18, colors = PARTICLE_COLORS, size = 8 } = config;
     for (let i = 0; i < count; i++) {
       const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
       const v = speed * (0.5 + Math.random() * 0.5);
       particlesRef.current.push({
         x, y, vx: Math.cos(angle) * v * (spread / 200), vy: Math.sin(angle) * v * (spread / 200) - 2,
         life: life + Math.random() * 15, maxLife: life + 15, gravity,
-        emoji: emojis[Math.floor(Math.random() * emojis.length)],
+        color: colors[Math.floor(Math.random() * colors.length)],
+        shape: Math.random() > 0.5 ? 'circle' : 'square',
         size: size * (0.7 + Math.random() * 0.6), rotation: Math.random() * 360, rotSpeed: (Math.random() - 0.5) * 12,
       });
     }
@@ -87,8 +90,15 @@ function useParticleSystem() {
         if (alpha <= 0) return false;
         ctx.save(); ctx.globalAlpha = alpha; ctx.translate(p.x, p.y);
         ctx.rotate((p.rotation * Math.PI) / 180);
-        ctx.font = `${p.size}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(p.emoji, 0, 0); ctx.restore();
+        ctx.fillStyle = p.color;
+        if (p.shape === 'circle') {
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+        }
+        ctx.restore();
         return true;
       });
       if (particlesRef.current.length > 0) animFrameRef.current = requestAnimationFrame(loop);
@@ -112,11 +122,14 @@ export default function WheelWidget({ prefillUserId = null }) {
   const [validating, setValidating] = useState(false);
   const [spinResult, setSpinResult] = useState(null);
   const [showFlash, setShowFlash] = useState(false);
-  const [pointerBouncing, setPointerBouncing] = useState(true);
   const [wheelConfetti, setWheelConfetti] = useState(false);
   const [closed, setClosed] = useState(false);
   const { canvasRef, spawnParticles, startLoop } = useParticleSystem();
   const [floatingNums, setFloatingNums] = useState([]);
+  const [countUpValue, setCountUpValue] = useState(0);
+  const [shaking, setShaking] = useState(false);
+  const [showSlowingText, setShowSlowingText] = useState(false);
+  const [prizeFlash, setPrizeFlash] = useState(false);
 
   const fingerprintRef = useRef(null);
 
@@ -131,14 +144,52 @@ export default function WheelWidget({ prefillUserId = null }) {
   const winSegmentRef = useRef(null);
   const screenRef = useRef(screen);
 
+  // Pointer physics refs
+  const pointerAngleRef = useRef(0);
+  const pointerVelRef = useRef(0);
+  const lastPegIndexRef = useRef(-1);
+  const pointerElRef = useRef(null);
+  const prevWheelAngleRef = useRef(0);
+
   const DECEL_DURATION = 3500; // 3.5 seconds
   const SPIN_SPEED = 8;       // degrees per frame at full speed
 
-  // Ease-out cubic: fast start, gradual stop
-  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+  // Spring-damper parameters (per-frame units)
+  const SPRING_STIFFNESS = 0.3;
+  const SPRING_DAMPING = 0.15;
+
+  // easeOutQuint: softer tail than cubic for more anticipation
+  const easeOutQuint = (t) => 1 - Math.pow(1 - t, 5);
 
   // Keep screenRef in sync
   useEffect(() => { screenRef.current = screen; }, [screen]);
+
+  // Count-up animation for win prize
+  useEffect(() => {
+    if (!spinResult || spinResult.isLoss) {
+      setCountUpValue(0);
+      setPrizeFlash(false);
+      return;
+    }
+    const target = spinResult.prize.kwacha;
+    const duration = 800;
+    const start = performance.now();
+    let raf;
+    const animate = (now) => {
+      const elapsed = now - start;
+      const t = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic for count
+      setCountUpValue(Math.round(eased * target));
+      if (t < 1) {
+        raf = requestAnimationFrame(animate);
+      } else {
+        setPrizeFlash(true);
+        setTimeout(() => setPrizeFlash(false), 300);
+      }
+    };
+    raf = requestAnimationFrame(animate);
+    return () => { if (raf) cancelAnimationFrame(raf); };
+  }, [spinResult]);
 
   const spawnFloatingNumber = useCallback((text, x, y, color = '#fbbf24') => {
     const id = Date.now() + Math.random();
@@ -167,50 +218,114 @@ export default function WheelWidget({ prefillUserId = null }) {
     if (isActive && !spinActiveRef.current) {
       // Start the loop
       spinActiveRef.current = true;
+      lastPegIndexRef.current = -1;
+      prevWheelAngleRef.current = spinAngleRef.current;
+      pointerAngleRef.current = 0;
+      pointerVelRef.current = 0;
+      setShowSlowingText(false);
       let cancelled = false;
+
       const loop = (timestamp) => {
         if (cancelled) return;
+
+        let currentAngle = spinAngleRef.current;
+
         // DECELERATING — time-based easing
         if (decelStartRef.current !== null) {
           const elapsed = timestamp - decelStartRef.current;
           const t = Math.min(elapsed / DECEL_DURATION, 1);
-          const progress = easeOutCubic(t);
-          spinAngleRef.current = decelFromRef.current + decelTotalRef.current * progress;
+          const progress = easeOutQuint(t);
+          currentAngle = decelFromRef.current + decelTotalRef.current * progress;
+          spinAngleRef.current = currentAngle;
 
           if (wheelRef.current) {
-            wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
+            wheelRef.current.style.transform = `rotate(${currentAngle}deg)`;
+          }
+
+          // Show "Slowing down..." in last 20% of deceleration
+          if (t > 0.8) {
+            setShowSlowingText(true);
           }
 
           if (t >= 1) {
-            // Deceleration complete — show result
+            // Wheel stopped — let pointer physics settle for ~500ms
             decelStartRef.current = null;
-            spinActiveRef.current = false;
-            const segment = winSegmentRef.current;
-            setScreen('result');
-            setPointerBouncing(false);
-            setSpinResult(segment);
+            const settleStart = performance.now();
+            const settleLoop = () => {
+              if (cancelled) return;
+              // Continue spring physics
+              pointerVelRef.current += (-SPRING_STIFFNESS * pointerAngleRef.current - SPRING_DAMPING * pointerVelRef.current);
+              pointerAngleRef.current += pointerVelRef.current;
+              if (pointerElRef.current) {
+                pointerElRef.current.style.transform = `rotate(${pointerAngleRef.current}deg)`;
+              }
+              const settled = Math.abs(pointerAngleRef.current) < 0.1 && Math.abs(pointerVelRef.current) < 0.1;
+              if (performance.now() - settleStart < 500 && !settled) {
+                requestAnimationFrame(settleLoop);
+              } else {
+                // Pointer settled — show result
+                pointerAngleRef.current = 0;
+                pointerVelRef.current = 0;
+                if (pointerElRef.current) pointerElRef.current.style.transform = 'rotate(0deg)';
 
-            if (segment && !segment.isLoss) {
-              setShowFlash(true);
-              setWheelConfetti(true);
-              setTimeout(() => setShowFlash(false), 400);
-              setTimeout(() => setWheelConfetti(false), 3000);
-              const cx = window.innerWidth / 2, cy = window.innerHeight * 0.45;
-              spawnParticles(cx, cy, 25, { spread: 250, speed: 9, life: 40, gravity: 0.2, emojis: ['🪙','💰','✨','🎉'] });
-              spawnParticles(cx, cy, 15, { spread: 180, speed: 6, life: 30, gravity: 0.15, emojis: ['✨','🌟','💫'] });
-              startLoop();
-              if (segment.prize?.kwacha) spawnFloatingNumber(`+K${segment.prize.kwacha}`, cx, cy - 40, '#fbbf24');
-            }
-            spinFrameRef.current = null;
-            return; // stop loop
+                spinActiveRef.current = false;
+                const segment = winSegmentRef.current;
+                setScreen('result');
+                setSpinResult(segment);
+                setShowSlowingText(false);
+
+                if (segment && !segment.isLoss) {
+                  setShowFlash(true);
+                  setWheelConfetti(true);
+                  setShaking(true);
+                  setTimeout(() => setShowFlash(false), 400);
+                  setTimeout(() => setWheelConfetti(false), 3000);
+                  setTimeout(() => setShaking(false), 150);
+                  const cx = window.innerWidth / 2, cy = window.innerHeight * 0.45;
+                  spawnParticles(cx, cy, 25, { spread: 250, speed: 9, life: 40, gravity: 0.2 });
+                  spawnParticles(cx, cy, 15, { spread: 180, speed: 6, life: 30, gravity: 0.15 });
+                  startLoop();
+                  if (segment.prize?.kwacha) spawnFloatingNumber(`+K${segment.prize.kwacha}`, cx, cy - 40, '#fbbf24');
+                }
+                spinFrameRef.current = null;
+              }
+            };
+            requestAnimationFrame(settleLoop);
+            return; // exit main loop, settle loop takes over
           }
         } else {
           // FREE SPINNING — constant speed
           spinAngleRef.current += SPIN_SPEED;
+          currentAngle = spinAngleRef.current;
           if (wheelRef.current) {
-            wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
+            wheelRef.current.style.transform = `rotate(${currentAngle}deg)`;
           }
         }
+
+        // === POINTER-PEG PHYSICS ===
+        const normalizedAngle = ((currentAngle % 360) + 360) % 360;
+        const pegIndex = Math.floor(normalizedAngle / SEG_ANGLE);
+        if (lastPegIndexRef.current >= 0 && pegIndex !== lastPegIndexRef.current) {
+          // Peg crossing — apply impulse scaled by wheel speed
+          const wheelSpeed = Math.abs(currentAngle - prevWheelAngleRef.current);
+          let impulse;
+          if (wheelSpeed >= 6) impulse = 2;       // full speed: tiny rapid flicks
+          else if (wheelSpeed >= 3) impulse = 5;   // medium: visible bounces
+          else impulse = 10;                        // near stop: big dramatic bounces
+          pointerVelRef.current += impulse;
+        }
+        lastPegIndexRef.current = pegIndex;
+        prevWheelAngleRef.current = currentAngle;
+
+        // Spring-damper update
+        pointerVelRef.current += (-SPRING_STIFFNESS * pointerAngleRef.current - SPRING_DAMPING * pointerVelRef.current);
+        pointerAngleRef.current += pointerVelRef.current;
+        // Clamp max deflection
+        pointerAngleRef.current = Math.max(-20, Math.min(20, pointerAngleRef.current));
+        if (pointerElRef.current) {
+          pointerElRef.current.style.transform = `rotate(${pointerAngleRef.current}deg)`;
+        }
+
         spinFrameRef.current = requestAnimationFrame(loop);
       };
       spinFrameRef.current = requestAnimationFrame(loop);
@@ -250,7 +365,6 @@ export default function WheelWidget({ prefillUserId = null }) {
       // Valid — start spinning
       setValidating(false);
       setScreen('spinning');
-      setPointerBouncing(true);
     } catch (err) {
       setValidationError('Network error. Please try again.');
       setValidating(false);
@@ -299,9 +413,9 @@ export default function WheelWidget({ prefillUserId = null }) {
       if (remaining <= 0) remaining += 360;
 
       // Match initial decel speed to free-spin speed for smooth transition.
-      // easeOutCubic derivative at t=0 is 3, so initialSpeed = 3 * totalDist / duration.
+      // easeOutQuint derivative at t=0 is 5, so initialSpeed = 5 * totalDist / duration.
       // We want initialSpeed = SPIN_SPEED * 60 (approx fps), so:
-      const idealTotal = (SPIN_SPEED * 60 * DECEL_DURATION) / 3000; // in degrees
+      const idealTotal = (SPIN_SPEED * 60 * DECEL_DURATION) / 5000; // in degrees
       // Round up to whole rotations + remaining to land on target
       const minSpins = Math.ceil((idealTotal - remaining) / 360);
       const extraSpins = Math.max(minSpins, 2) * 360;
@@ -318,11 +432,12 @@ export default function WheelWidget({ prefillUserId = null }) {
   // CLAIM — transition to done (or back to prompt in test mode)
   const claimPrize = useCallback(() => {
     if (!spinResult) return;
+    const wasWin = !spinResult.isLoss;
     setSpinResult(null);
     setScreen(isTestMode ? 'prompt' : 'done');
-    if (spinResult && !spinResult.isLoss) {
+    if (wasWin) {
       const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
-      spawnParticles(cx, cy, 20, { spread: 300, speed: 10, life: 35, gravity: 0.22, emojis: ['🎉','🪙','💰'] });
+      spawnParticles(cx, cy, 20, { spread: 300, speed: 10, life: 35, gravity: 0.22 });
       startLoop();
     }
   }, [spinResult, spawnParticles, startLoop]);
@@ -349,70 +464,8 @@ export default function WheelWidget({ prefillUserId = null }) {
   }
 
   // ============================================================
-  // PROMPT SCREEN — ID input
-  // ============================================================
-  if (screen === 'prompt') {
-    return (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
-        <div className="relative text-center p-8 rounded-2xl max-w-xs w-full mx-4" style={{
-          background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
-          border: '3px solid #3a3f52',
-          boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
-        }}>
-          {/* Close button */}
-          <button type="button" onClick={handleClose}
-            className="absolute top-3 right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
-            style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 2px 8px rgba(239,68,68,0.5)' }}>
-            <X className="w-5 h-5 text-white" strokeWidth={3} />
-          </button>
-
-          <div className="text-5xl mb-3">🎡</div>
-          <h1 className="text-3xl font-black mb-1" style={{
-            background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-            filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-          }}>SPIN & WIN</h1>
-          <p className="text-gray-400 text-sm mb-5">Enter your BwanaBet ID to play</p>
-
-          <input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            value={customerId}
-            onChange={e => { setCustomerId(e.target.value); setValidationError(''); }}
-            onKeyDown={e => { if (e.key === 'Enter' && !validating) handleValidateAndPlay(); }}
-            placeholder="Your BwanaBet ID"
-            className="w-full px-4 py-3 rounded-xl text-center text-lg font-bold text-white placeholder-gray-500 outline-none transition-all focus:ring-2 focus:ring-amber-400/50"
-            style={{
-              background: 'rgba(0,0,0,0.4)',
-              border: validationError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.1)',
-            }}
-            disabled={validating}
-          />
-
-          {validationError && (
-            <p className="text-red-400 text-xs mt-2 font-medium">{validationError}</p>
-          )}
-
-          <button
-            type="button"
-            onClick={handleValidateAndPlay}
-            disabled={validating}
-            className="w-full mt-4 py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-              boxShadow: '0 4px 15px rgba(245,158,11,0.3)',
-            }}
-          >
-            {validating ? 'Checking...' : 'Play!'}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ============================================================
-  // WHEEL SCREEN — spinning / stopping / result / done
+  // ALL OTHER SCREENS: prompt, spinning, stopping, result, done
+  // Wheel always visible; overlays render on top
   // ============================================================
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
@@ -440,19 +493,80 @@ export default function WheelWidget({ prefillUserId = null }) {
       {wheelConfetti && (
         <div className="fixed inset-0 pointer-events-none z-[55] overflow-hidden">
           {Array.from({ length: 60 }, (_, i) => {
-            const colors = ['#fbbf24','#a855f7','#ec4899','#22c55e','#3b82f6','#f97316','#ef4444','#14b8a6'];
-            const shape = ['circle','rect','star'][i % 3];
+            const colors = ['#fbbf24','#a855f7','#06b6d4','#ec4899','#22c55e'];
+            const shape = ['circle','rect'][i % 2];
             const size = 6 + Math.random() * 10;
             return (
               <div key={i} style={{
                 position: 'absolute', left: `${5 + Math.random() * 90}%`, top: '-20px',
-                width: shape === 'rect' ? size * 0.6 : size, height: shape === 'star' ? size * 0.4 : size,
+                width: shape === 'rect' ? size * 0.6 : size, height: size,
                 backgroundColor: colors[i % colors.length], borderRadius: shape === 'circle' ? '50%' : '2px',
                 '--drift': `${(Math.random() - 0.5) * 120}px`,
                 animation: `confettiFall ${2.2 + Math.random() * 1.5}s ${Math.random() * 0.8}s cubic-bezier(0.25,0.46,0.45,0.94) both`,
               }} />
             );
           })}
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* PROMPT OVERLAY — wheel visible behind                        */}
+      {/* ============================================================ */}
+      {screen === 'prompt' && (
+        <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)', animation: 'fadeIn 0.3s ease-out' }}>
+          <div className="relative text-center p-8 rounded-2xl max-w-xs w-full mx-4" style={{
+            background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
+            border: '3px solid #3a3f52',
+            boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
+          }}>
+            {/* Close button */}
+            <button type="button" onClick={handleClose}
+              className="absolute top-3 right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
+              style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 2px 8px rgba(239,68,68,0.5)' }}>
+              <X className="w-5 h-5 text-white" strokeWidth={3} />
+            </button>
+
+            <h1 className="text-3xl font-black mb-1" style={{
+              background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
+            }}>SPIN & WIN</h1>
+            <p className="text-white text-sm mb-5">Enter your BwanaBet ID to play</p>
+
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={customerId}
+              onChange={e => { setCustomerId(e.target.value); setValidationError(''); }}
+              onKeyDown={e => { if (e.key === 'Enter' && !validating) handleValidateAndPlay(); }}
+              placeholder="Your BwanaBet ID"
+              className="w-full px-4 py-3 rounded-xl text-center text-lg font-bold text-white outline-none transition-all focus:ring-2 focus:ring-amber-400/50"
+              style={{
+                background: 'rgba(0,0,0,0.4)',
+                border: validationError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.1)',
+                '::placeholder': { color: 'rgba(255,255,255,0.4)' },
+              }}
+              disabled={validating}
+            />
+
+            {validationError && (
+              <p className="text-red-400 text-xs mt-2 font-medium">{validationError}</p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleValidateAndPlay}
+              disabled={validating}
+              className="w-full mt-4 py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                boxShadow: '0 4px 15px rgba(245,158,11,0.3)',
+              }}
+            >
+              {validating ? 'Checking...' : 'Play!'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -469,18 +583,37 @@ export default function WheelWidget({ prefillUserId = null }) {
               : '0 0 60px rgba(251,191,36,0.15), 0 20px 60px rgba(0,0,0,0.5)',
             animation: 'resultZoom 0.5s cubic-bezier(0.34,1.56,0.64,1) both',
           }}>
-            <div className="text-6xl mb-3" style={{ animation: 'float 2s ease-in-out infinite' }}>{spinResult.icon}</div>
             {spinResult.isLoss ? (
               <>
-                <div className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-1">Better Luck</div>
-                <div className="text-2xl font-black text-gray-300 mb-5">Try Again Tomorrow</div>
+                <div className="text-lg font-extrabold uppercase tracking-widest mb-2" style={{ color: 'rgba(255,255,255,0.7)', letterSpacing: '2px' }}>
+                  BETTER LUCK NEXT TIME
+                </div>
+                <div className="text-base font-bold uppercase tracking-widest mb-6" style={{ color: 'rgba(255,255,255,0.4)', letterSpacing: '2px' }}>
+                  TRY AGAIN TOMORROW
+                </div>
               </>
             ) : (
               <>
-                <div className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-1">You Won</div>
-                <div className="text-3xl font-black text-yellow-400 mb-5" style={{ textShadow: '0 0 20px rgba(251,191,36,0.5)' }}>
-                  K{spinResult.prize.kwacha}
+                <div className="uppercase font-bold mb-2" style={{ color: '#ffd700', fontSize: '12px', letterSpacing: '3px' }}>
+                  YOU WON
                 </div>
+                <div className="relative mb-2">
+                  {prizeFlash && (
+                    <div className="absolute inset-0 rounded-xl" style={{
+                      background: 'radial-gradient(circle, rgba(255,215,0,0.4) 0%, transparent 70%)',
+                      animation: 'fadeIn 0.1s ease-out',
+                    }} />
+                  )}
+                  <div className="relative" style={{
+                    fontSize: '48px', fontWeight: 900, color: '#ffd700',
+                    textShadow: '0 0 20px rgba(255,215,0,0.5), 0 0 40px rgba(255,215,0,0.2)',
+                    transform: `scale(${spinResult.prize ? 0.9 + 0.1 * Math.min(countUpValue / spinResult.prize.kwacha, 1) : 1})`,
+                    transition: 'transform 0.05s ease-out',
+                  }}>
+                    K{countUpValue}
+                  </div>
+                </div>
+                <p className="text-gray-400 text-xs mb-5">Prize will be credited to your account</p>
               </>
             )}
             <button
@@ -493,14 +626,14 @@ export default function WheelWidget({ prefillUserId = null }) {
               }`}
               style={spinResult.isLoss ? {} : { '--btn-shadow': '#065F46', '--btn-glow': 'rgba(16,185,129,0.3)', '--btn-glow2': 'rgba(16,185,129,0.15)', animation: 'collectBtnPulse 2s ease-in-out infinite' }}
             >
-              {spinResult.isLoss ? 'OK' : 'Claim Prize!'}
+              {spinResult.isLoss ? 'GOT IT' : 'Claim Prize!'}
             </button>
           </div>
         </div>
       )}
 
       {/* ============================================================ */}
-      {/* DONE OVERLAY — Try Again Tomorrow (over the wheel)           */}
+      {/* DONE OVERLAY — dignified, no emojis                          */}
       {/* ============================================================ */}
       {screen === 'done' && !spinResult && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
@@ -510,15 +643,18 @@ export default function WheelWidget({ prefillUserId = null }) {
             boxShadow: '0 0 60px rgba(100,100,100,0.1), 0 20px 60px rgba(0,0,0,0.5)',
             animation: 'resultZoom 0.5s cubic-bezier(0.34,1.56,0.64,1) both',
           }}>
-            <div className="text-6xl mb-3">😢</div>
-            <h2 className="text-2xl font-black text-gray-200 mb-2">Try Again Tomorrow!</h2>
-            <p className="text-gray-400 text-sm mb-6">Come back tomorrow for a new spin.</p>
+            <div className="text-lg font-extrabold uppercase tracking-widest mb-2" style={{ color: 'rgba(255,255,255,0.7)', letterSpacing: '2px' }}>
+              BETTER LUCK NEXT TIME
+            </div>
+            <div className="text-base font-bold uppercase tracking-widest mb-6" style={{ color: 'rgba(255,255,255,0.4)', letterSpacing: '2px' }}>
+              TRY AGAIN TOMORROW
+            </div>
             <button
               type="button"
               onClick={handleClose}
               className="w-full py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-500/20"
             >
-              Close
+              GOT IT
             </button>
           </div>
         </div>
@@ -532,6 +668,7 @@ export default function WheelWidget({ prefillUserId = null }) {
         background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
         boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
         border: '3px solid #3a3f52',
+        ...(shaking ? { animation: 'winShake 0.15s ease-out' } : {}),
       }}>
 
         {/* Marquee light dots around card border */}
@@ -605,10 +742,10 @@ export default function WheelWidget({ prefillUserId = null }) {
             }} />
 
             {/* Sparkle accents */}
-            <div className="absolute pointer-events-none text-white/40" style={{ top: '5%', left: '2%', fontSize: 18, animation: 'sparkle 2.5s 0.3s ease-in-out infinite' }}>✦</div>
-            <div className="absolute pointer-events-none text-white/30" style={{ top: '12%', right: '4%', fontSize: 14, animation: 'sparkle 2.5s 1s ease-in-out infinite' }}>✦</div>
-            <div className="absolute pointer-events-none text-white/25" style={{ bottom: '10%', left: '4%', fontSize: 12, animation: 'sparkle 2.5s 1.6s ease-in-out infinite' }}>✦</div>
-            <div className="absolute pointer-events-none text-white/35" style={{ bottom: '5%', right: '2%', fontSize: 16, animation: 'sparkle 2.5s 0.7s ease-in-out infinite' }}>✦</div>
+            <div className="absolute pointer-events-none text-white/40" style={{ top: '5%', left: '2%', fontSize: 18, animation: 'sparkle 2.5s 0.3s ease-in-out infinite' }}>&#10022;</div>
+            <div className="absolute pointer-events-none text-white/30" style={{ top: '12%', right: '4%', fontSize: 14, animation: 'sparkle 2.5s 1s ease-in-out infinite' }}>&#10022;</div>
+            <div className="absolute pointer-events-none text-white/25" style={{ bottom: '10%', left: '4%', fontSize: 12, animation: 'sparkle 2.5s 1.6s ease-in-out infinite' }}>&#10022;</div>
+            <div className="absolute pointer-events-none text-white/35" style={{ bottom: '5%', right: '2%', fontSize: 16, animation: 'sparkle 2.5s 0.7s ease-in-out infinite' }}>&#10022;</div>
 
             {/* Drop shadow under wheel */}
             <div className="absolute pointer-events-none rounded-full" style={{
@@ -693,25 +830,24 @@ export default function WheelWidget({ prefillUserId = null }) {
               })}
             </svg>
 
-            {/* === POINTER === */}
-            <div className="absolute z-30" style={{
-              top: -4, left: '50%', transform: 'translateX(-50%)',
-              animation: pointerBouncing ? 'pointerBounce 0.15s ease-in-out infinite' : 'none',
-            }}>
-              <svg width="40" height="48" viewBox="0 0 40 48" style={{ filter: 'drop-shadow(0 3px 8px rgba(0,0,0,0.7))' }}>
-                <defs>
-                  <linearGradient id="ptrGold" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#ffd700" />
-                    <stop offset="40%" stopColor="#b8860b" />
-                    <stop offset="100%" stopColor="#ffd700" />
-                  </linearGradient>
-                </defs>
-                <polygon points="20,46 2,16 38,16" fill="url(#ptrGold)" stroke="#8b6914" strokeWidth="1" />
-                <polygon points="20,38 9,19 31,19" fill="#ffd700" opacity="0.35" />
-                <circle cx="20" cy="12" r="11" fill="#1a1a1a" stroke="#b8860b" strokeWidth="2" />
-                <circle cx="20" cy="12" r="8" fill="#222" />
-                <circle cx="16" cy="9" r="3" fill="white" opacity="0.2" />
-              </svg>
+            {/* === POINTER — JS-driven spring physics === */}
+            <div className="absolute z-30" style={{ top: -4, left: '50%', transform: 'translateX(-50%)' }}>
+              <div ref={pointerElRef} style={{ transformOrigin: '20px 12px' }}>
+                <svg width="40" height="48" viewBox="0 0 40 48" style={{ filter: 'drop-shadow(0 3px 8px rgba(0,0,0,0.7))' }}>
+                  <defs>
+                    <linearGradient id="ptrGold" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#ffd700" />
+                      <stop offset="40%" stopColor="#b8860b" />
+                      <stop offset="100%" stopColor="#ffd700" />
+                    </linearGradient>
+                  </defs>
+                  <polygon points="20,46 2,16 38,16" fill="url(#ptrGold)" stroke="#8b6914" strokeWidth="1" />
+                  <polygon points="20,38 9,19 31,19" fill="#ffd700" opacity="0.35" />
+                  <circle cx="20" cy="12" r="11" fill="#1a1a1a" stroke="#b8860b" strokeWidth="2" />
+                  <circle cx="20" cy="12" r="8" fill="#222" />
+                  <circle cx="16" cy="9" r="3" fill="white" opacity="0.2" />
+                </svg>
+              </div>
             </div>
 
             {/* === SPINNING WHEEL === */}
@@ -868,10 +1004,11 @@ export default function WheelWidget({ prefillUserId = null }) {
                   screen === 'spinning' ? 'hover:scale-110 active:scale-90 cursor-pointer' : 'cursor-default'
                 }`}
               >
-                <span className={`font-black text-base sm:text-lg tracking-wider transition-opacity duration-300 ${screen !== 'spinning' ? 'opacity-40' : ''}`} style={{
+                <span className={`font-black text-base sm:text-lg tracking-wider ${screen !== 'spinning' ? 'opacity-40' : ''}`} style={{
                   background: 'linear-gradient(180deg, #ff9999 0%, #ef4444 40%, #b91c1c 100%)',
                   WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                   filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.9))',
+                  ...(screen === 'spinning' ? { animation: 'stopFlash 1s ease-in-out infinite' } : {}),
                 }}>STOP</span>
               </button>
             </div>
@@ -886,8 +1023,8 @@ export default function WheelWidget({ prefillUserId = null }) {
                 <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
               </div>
             )}
-            {screen === 'stopping' && (
-              <div className="flex items-center justify-center gap-2 text-gray-400 py-1">
+            {screen === 'stopping' && showSlowingText && (
+              <div className="flex items-center justify-center gap-2 text-gray-400 py-1" style={{ animation: 'fadeIn 0.5s ease-out' }}>
                 <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
                 <span className="font-bold text-sm tracking-wide">Slowing down...</span>
                 <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
