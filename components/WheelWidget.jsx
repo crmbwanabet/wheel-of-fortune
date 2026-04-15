@@ -7,16 +7,16 @@ import { X, Sparkles, Trophy } from 'lucide-react';
 // DATA — 10 segments: K10, K20, K50, K100, K200, Try Again Tomorrow ×5
 // ============================================================================
 const WHEEL_SEGMENTS = [
-  { id: 1,  label: 'K10',                prize: { kwacha: 10 },  icon: '🪙', color: '#06b6d4', isLoss: false },
-  { id: 2,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#374151', isLoss: true },
-  { id: 3,  label: 'K50',                prize: { kwacha: 50 },  icon: '🪙', color: '#a855f7', isLoss: false },
-  { id: 4,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#4b5563', isLoss: true },
-  { id: 5,  label: 'K200',               prize: { kwacha: 200 }, icon: '💰', color: '#eab308', isLoss: false },
-  { id: 6,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#374151', isLoss: true },
-  { id: 7,  label: 'K20',                prize: { kwacha: 20 },  icon: '🪙', color: '#22c55e', isLoss: false },
-  { id: 8,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#4b5563', isLoss: true },
-  { id: 9,  label: 'K100',               prize: { kwacha: 100 }, icon: '💰', color: '#f97316', isLoss: false },
-  { id: 10, label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#374151', isLoss: true },
+  { id: 1,  label: 'K10',                prize: { kwacha: 10 },  icon: '🪙', color: '#00e5ff', isLoss: false },
+  { id: 2,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#78909c', isLoss: true },
+  { id: 3,  label: 'K50',                prize: { kwacha: 50 },  icon: '🪙', color: '#d500f9', isLoss: false },
+  { id: 4,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#78909c', isLoss: true },
+  { id: 5,  label: 'K200',               prize: { kwacha: 200 }, icon: '💰', color: '#ffd600', isLoss: false },
+  { id: 6,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#78909c', isLoss: true },
+  { id: 7,  label: 'K20',                prize: { kwacha: 20 },  icon: '🪙', color: '#00e676', isLoss: false },
+  { id: 8,  label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#78909c', isLoss: true },
+  { id: 9,  label: 'K100',               prize: { kwacha: 100 }, icon: '💰', color: '#ff6d00', isLoss: false },
+  { id: 10, label: 'Try Again Tomorrow', prize: null,            icon: '😢', color: '#78909c', isLoss: true },
 ];
 
 const NUM = WHEEL_SEGMENTS.length;
@@ -404,7 +404,7 @@ export default function WheelWidget({ userId = null, username = null }) {
             {/* === SPOTLIGHT behind wheel === */}
             <div className="absolute pointer-events-none" style={{
               inset: '-20%',
-              background: 'radial-gradient(circle at 50% 48%, rgba(200,210,230,0.12) 0%, rgba(150,160,180,0.06) 30%, transparent 60%)',
+              background: 'radial-gradient(circle at 50% 48%, rgba(200,210,230,0.15) 0%, rgba(150,160,180,0.07) 30%, transparent 60%)',
             }} />
 
             {/* Sparkle accents */}
@@ -452,10 +452,15 @@ export default function WheelWidget({ userId = null, username = null }) {
 
               {/* Thick outer chrome ring */}
               <circle cx="200" cy="200" r="194" fill="none" stroke="url(#chrome1)" strokeWidth="12" filter="url(#chromeGlow)" />
+              {/* Specular highlight arc — bright white sweep across upper-left chrome */}
+              <path d="M 80 120 A 190 190 0 0 1 280 70" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" opacity="0.35" filter="url(#chromeGlow)" />
+              <path d="M 90 125 A 185 185 0 0 1 270 78" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" opacity="0.2" />
               {/* Dark channel for lights */}
               <circle cx="200" cy="200" r="184" fill="none" stroke="#12151f" strokeWidth="10" />
               {/* Inner chrome ring */}
               <circle cx="200" cy="200" r="176" fill="none" stroke="url(#chrome2)" strokeWidth="6" />
+              {/* Inner chrome specular */}
+              <path d="M 95 140 A 170 170 0 0 1 260 90" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" opacity="0.18" />
               {/* Dark inner edge */}
               <circle cx="200" cy="200" r="171" fill="none" stroke="#1a1e2e" strokeWidth="2" />
 
@@ -517,42 +522,44 @@ export default function WheelWidget({ userId = null, username = null }) {
               ref={wheelRef}
               className="absolute rounded-full overflow-hidden"
               style={{
-                top: '13%', left: '13%', right: '13%', bottom: '13%',
+                top: '7%', left: '7%', right: '7%', bottom: '7%',
                 willChange: isSpinning ? 'transform' : 'auto',
               }}
             >
               <svg viewBox="0 0 300 300" className="w-full h-full">
                 <defs>
+                  {/* Gloss — light top-lit sheen, no bottom darkening */}
                   <linearGradient id="segGloss" x1="50%" y1="0%" x2="50%" y2="100%">
-                    <stop offset="0%" stopColor="#fff" stopOpacity="0.32" />
-                    <stop offset="30%" stopColor="#fff" stopOpacity="0.1" />
-                    <stop offset="50%" stopColor="#000" stopOpacity="0" />
-                    <stop offset="100%" stopColor="#000" stopOpacity="0.28" />
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0.1" />
+                    <stop offset="40%" stopColor="#fff" stopOpacity="0.02" />
+                    <stop offset="100%" stopColor="#000" stopOpacity="0" />
                   </linearGradient>
-                  <radialGradient id="segDepth" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#fff" stopOpacity="0.08" />
-                    <stop offset="30%" stopColor="#000" stopOpacity="0" />
-                    <stop offset="80%" stopColor="#000" stopOpacity="0.15" />
-                    <stop offset="100%" stopColor="#000" stopOpacity="0.3" />
-                  </radialGradient>
-                  <linearGradient id="segShimmer" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#fff" stopOpacity="0" />
-                    <stop offset="42%" stopColor="#fff" stopOpacity="0" />
-                    <stop offset="50%" stopColor="#fff" stopOpacity="0.14" />
-                    <stop offset="58%" stopColor="#fff" stopOpacity="0" />
-                    <stop offset="100%" stopColor="#fff" stopOpacity="0" />
-                  </linearGradient>
+                  {/* Center glow — soft convex dome illusion */}
                   <radialGradient id="innerGlow" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#fff" stopOpacity="0.4" />
-                    <stop offset="12%" stopColor="#fff" stopOpacity="0.15" />
-                    <stop offset="35%" stopColor="#fff" stopOpacity="0" />
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0.2" />
+                    <stop offset="15%" stopColor="#fff" stopOpacity="0.08" />
+                    <stop offset="30%" stopColor="#fff" stopOpacity="0" />
                     <stop offset="100%" stopColor="#000" stopOpacity="0" />
                   </radialGradient>
+                  {/* Rim darkening — edges recede for depth */}
+                  <radialGradient id="rimDarken" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#000" stopOpacity="0" />
+                    <stop offset="75%" stopColor="#000" stopOpacity="0" />
+                    <stop offset="90%" stopColor="#000" stopOpacity="0.1" />
+                    <stop offset="100%" stopColor="#000" stopOpacity="0.2" />
+                  </radialGradient>
+                  {/* Directional light — subtle upper-left highlight */}
+                  <radialGradient id="dirLight" cx="35%" cy="30%" r="65%">
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0.06" />
+                    <stop offset="50%" stopColor="#fff" stopOpacity="0" />
+                    <stop offset="100%" stopColor="#000" stopOpacity="0.04" />
+                  </radialGradient>
+                  {/* Rim highlight — thin specular at outer edge */}
                   <radialGradient id="rimLight" cx="50%" cy="50%" r="50%">
                     <stop offset="0%" stopColor="#000" stopOpacity="0" />
-                    <stop offset="85%" stopColor="#000" stopOpacity="0" />
-                    <stop offset="94%" stopColor="#fff" stopOpacity="0.08" />
-                    <stop offset="100%" stopColor="#fff" stopOpacity="0.12" />
+                    <stop offset="92%" stopColor="#000" stopOpacity="0" />
+                    <stop offset="97%" stopColor="#fff" stopOpacity="0.04" />
+                    <stop offset="100%" stopColor="#fff" stopOpacity="0.06" />
                   </radialGradient>
                 </defs>
 
@@ -567,8 +574,6 @@ export default function WheelWidget({ userId = null, username = null }) {
                     <g key={seg.id}>
                       <path d={path} fill={seg.color} />
                       <path d={path} fill="url(#segGloss)" />
-                      <path d={path} fill="url(#segDepth)" />
-                      <path d={path} fill="url(#segShimmer)" />
                     </g>
                   );
                 })}
@@ -586,8 +591,9 @@ export default function WheelWidget({ userId = null, username = null }) {
                   );
                 })}
 
-                <circle cx="150" cy="150" r="148" fill="url(#rimLight)" />
+                {/* Subtle 3D depth overlays */}
                 <circle cx="150" cy="150" r="148" fill="url(#innerGlow)" />
+                <circle cx="150" cy="150" r="148" fill="url(#rimDarken)" />
 
                 {/* TEXT LABELS — radial text along each segment's center line */}
                 {WHEEL_SEGMENTS.map((seg, i) => {
@@ -625,29 +631,37 @@ export default function WheelWidget({ userId = null, username = null }) {
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20" style={{ width: '22%', height: '22%' }}>
               <svg viewBox="0 0 90 90" className="w-full h-full">
                 <defs>
-                  <radialGradient id="hubSphere" cx="38%" cy="30%" r="65%">
-                    <stop offset="0%" stopColor="#777" />
-                    <stop offset="15%" stopColor="#555" />
-                    <stop offset="40%" stopColor="#2a2a2a" />
-                    <stop offset="70%" stopColor="#111" />
+                  <radialGradient id="hubSphere" cx="38%" cy="28%" r="65%">
+                    <stop offset="0%" stopColor="#aaa" />
+                    <stop offset="10%" stopColor="#777" />
+                    <stop offset="30%" stopColor="#3a3a3a" />
+                    <stop offset="55%" stopColor="#151515" />
                     <stop offset="100%" stopColor="#000" />
                   </radialGradient>
                   <linearGradient id="hubChrome" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#ddd" />
-                    <stop offset="20%" stopColor="#fff" />
-                    <stop offset="45%" stopColor="#777" />
-                    <stop offset="70%" stopColor="#e0e0e0" />
-                    <stop offset="100%" stopColor="#aaa" />
+                    <stop offset="0%" stopColor="#e8e8e8" />
+                    <stop offset="15%" stopColor="#fff" />
+                    <stop offset="35%" stopColor="#666" />
+                    <stop offset="55%" stopColor="#fff" />
+                    <stop offset="75%" stopColor="#888" />
+                    <stop offset="100%" stopColor="#ccc" />
                   </linearGradient>
-                  <radialGradient id="hubSpec" cx="35%" cy="25%">
-                    <stop offset="0%" stopColor="#fff" stopOpacity="0.5" />
-                    <stop offset="40%" stopColor="#fff" stopOpacity="0.08" />
+                  <radialGradient id="hubSpec" cx="32%" cy="22%">
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0.85" />
+                    <stop offset="20%" stopColor="#fff" stopOpacity="0.4" />
+                    <stop offset="50%" stopColor="#fff" stopOpacity="0.08" />
                     <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+                  </radialGradient>
+                  <radialGradient id="hubRim" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#000" stopOpacity="0" />
+                    <stop offset="75%" stopColor="#000" stopOpacity="0" />
+                    <stop offset="100%" stopColor="#fff" stopOpacity="0.08" />
                   </radialGradient>
                 </defs>
                 <circle cx="45" cy="45" r="44" fill="none" stroke="url(#hubChrome)" strokeWidth="5" />
                 <circle cx="45" cy="45" r="39" fill="url(#hubSphere)" />
-                <ellipse cx="38" cy="34" rx="16" ry="12" fill="url(#hubSpec)" />
+                <circle cx="45" cy="45" r="39" fill="url(#hubRim)" />
+                <ellipse cx="36" cy="32" rx="18" ry="14" fill="url(#hubSpec)" />
               </svg>
               <button
                 type="button"
