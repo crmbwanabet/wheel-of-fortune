@@ -95,15 +95,14 @@ When the wheel fully stops:
 
 ### Changes
 
-**Remove all emojis from the result overlay:**
-- Replace win emoji (💰/🪙) with a gold circular badge containing "W" in bold
-  - 56px circle, `background: radial-gradient(circle at 40% 35%, #ffe066, #ffd700, #cc9900)`
-  - "W" text: 24px, font-weight 900, color #1a1a2e
-  - Box-shadow: `0 0 20px rgba(255,215,0,0.4)`
+**Remove all emojis and icons from the result overlay.**
+The win screen leads with the prize amount — no badge, no icon, no emoji above it.
 
 **Prize count-up animation:**
-- Instead of showing the final prize amount immediately, count up from K0 to the final value
+- "YOU WON" label in small uppercase gold text (12px, letter-spacing 3px)
+- Prize amount counts up from K0 to the final value (e.g., K0 → K200)
 - Duration: 800ms, easeOutCubic timing
+- Text: large (48px), font-weight 900, gold color (#ffd700), with text-shadow glow
 - Text scales up slightly during count (from scale 0.9 to 1.0)
 - On reaching final value: brief gold flash behind the number
 
@@ -122,15 +121,11 @@ When the wheel fully stops:
 
 ### Loss Result Changes
 
-**Remove all emojis from loss overlay:**
-- Replace 😢 with a muted circle containing "X"
-  - 48px circle, `border: 3px solid rgba(148,163,184,0.3)`
-  - "X" text: 20px, font-weight 900, color rgba(148,163,184,0.5)
+**Remove all emojis and icons from the loss overlay.** No emoji, no "X" circle, no icon.
 
-**Text changes:**
-- Heading: "Better Luck Next Time" (was "Better Luck" + "Try Again Tomorrow")
-- Subtext: "Try Again Tomorrow" in slightly smaller text below
-- Remove "Come back after 6:00 AM" or any time reference — just "Your next spin resets tomorrow morning"
+**Text layout (centered, stacked):**
+- "BETTER LUCK NEXT TIME" — heading, uppercase, font-weight 800, color white (opacity 0.7), letter-spacing 2px
+- "TRY AGAIN TOMORROW" — subheading below, uppercase, font-weight 700, slightly smaller, color white (opacity 0.4)
 - Button: "GOT IT" instead of "OK"
 
 **Tone:** Dignified, not depressing. Cool gray palette, no sad imagery.
@@ -165,10 +160,10 @@ When the wheel fully stops:
 
 ## 8. Done Overlay
 
-The "done" overlay (shown when user has already spun today) follows the same changes as the loss screen:
-- No emojis — use the same "X" circle icon
-- "Try Again Tomorrow!" heading
-- "Come back tomorrow for a new spin." subtext (no time reference)
+The "done" overlay (shown when user has already spun today) follows the same style as the loss screen:
+- No emojis, no icons
+- "BETTER LUCK NEXT TIME" heading
+- "TRY AGAIN TOMORROW" subheading
 - "GOT IT" button
 - Overlay shows on top of the wheel (current behavior, keep as-is)
 
