@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { checkRateLimit } from '@/lib/rateLimit';
 import {
   getWheelDayDate,
@@ -11,6 +11,7 @@ import {
 import { sendWinNotification } from '@/lib/telegram';
 
 async function getOrCreateDailyState(dayDate) {
+  const supabase = getSupabase();
   const { data: existing } = await supabase
     .from('wheel_daily_state')
     .select('*')
@@ -71,6 +72,7 @@ export async function POST(request) {
 
   const cleanId = customerId.trim();
   const dayDate = getWheelDayDate();
+  const supabase = getSupabase();
 
   // Check: has this customer already spun today?
   const { data: existingSpin } = await supabase

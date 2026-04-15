@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { checkRateLimit } from '@/lib/rateLimit';
 
 export async function POST(request) {
@@ -23,6 +23,7 @@ export async function POST(request) {
 
   const cleanId = customerId.trim();
 
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('customers')
     .select('id')
