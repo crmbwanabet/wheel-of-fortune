@@ -413,21 +413,16 @@ export default function WheelWidget({ prefillUserId = null }) {
       let remaining = targetRemainder - (currentAngle % 360);
       if (remaining <= 0) remaining += 360;
 
-      // Smooth deceleration: calculate distance and duration so initial decel
-      // speed exactly matches the free-spin speed (no visible speed jump).
-      // easeOutQuint derivative at t=0 is 5, so:
-      //   initialSpeed = decelTotal * 5 / duration_ms * (1000/60) = SPIN_SPEED
-      //   duration_ms = decelTotal * 5000 / (SPIN_SPEED * 60)
-      // We pick N extra rotations so the wheel spins visually, then compute
-      // the exact duration needed for seamless speed matching.
-      const baseTotal = remaining + 360; // at least 1 full rotation + landing offset
-      const N = Math.max(1, Math.round(baseTotal / 360));
-      const decelTotal = N * 360 + remaining;
+      // Smooth deceleration: 1 extra rotation + landing offset.
+      // Duration is calculated so initial decel speed EXACTLY matches free-spin speed.
+      // easeOutQuint'(0) = 5, so: duration_ms = decelTotal * 5000 / (SPIN_SPEED * 60)
+      // This guarantees zero speed jump at the transition point.
+      const decelTotal = 360 + remaining;
       const dynamicDuration = decelTotal * 5000 / (SPIN_SPEED * 60);
 
       decelFromRef.current = currentAngle;
       decelTotalRef.current = decelTotal;
-      decelDurationRef.current = Math.max(2500, Math.min(7000, dynamicDuration));
+      decelDurationRef.current = dynamicDuration;
       decelStartRef.current = performance.now();
     } catch (err) {
       // Network error during spin
