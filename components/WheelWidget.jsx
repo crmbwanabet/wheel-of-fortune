@@ -141,6 +141,7 @@ export default function WheelWidget({ prefillUserId = null }) {
   const decelStartRef = useRef(null);   // timestamp when STOP pressed
   const decelFromRef = useRef(0);       // angle when STOP pressed
   const decelTotalRef = useRef(0);      // total degrees to travel during decel
+  const decelDurationRef = useRef(3500); // dynamic duration for speed matching
   const winSegmentRef = useRef(null);
   const screenRef = useRef(screen);
 
@@ -233,7 +234,7 @@ export default function WheelWidget({ prefillUserId = null }) {
         // DECELERATING — time-based easing
         if (decelStartRef.current !== null) {
           const elapsed = timestamp - decelStartRef.current;
-          const t = Math.min(elapsed / DECEL_DURATION, 1);
+          const t = Math.min(elapsed / decelDurationRef.current, 1);
           const progress = easeOutQuint(t);
           currentAngle = decelFromRef.current + decelTotalRef.current * progress;
           spinAngleRef.current = currentAngle;
@@ -412,16 +413,21 @@ export default function WheelWidget({ prefillUserId = null }) {
       let remaining = targetRemainder - (currentAngle % 360);
       if (remaining <= 0) remaining += 360;
 
-      // Match initial decel speed to free-spin speed for smooth transition.
-      // easeOutQuint derivative at t=0 is 5, so initialSpeed = 5 * totalDist / duration.
-      // We want initialSpeed = SPIN_SPEED * 60 (approx fps), so:
-      const idealTotal = (SPIN_SPEED * 60 * DECEL_DURATION) / 5000; // in degrees
-      // Round up to whole rotations + remaining to land on target
-      const minSpins = Math.ceil((idealTotal - remaining) / 360);
-      const extraSpins = Math.max(minSpins, 2) * 360;
+      // Smooth deceleration: calculate distance and duration so initial decel
+      // speed exactly matches the free-spin speed (no visible speed jump).
+      // easeOutQuint derivative at t=0 is 5, so:
+      //   initialSpeed = decelTotal * 5 / duration_ms * (1000/60) = SPIN_SPEED
+      //   duration_ms = decelTotal * 5000 / (SPIN_SPEED * 60)
+      // We pick N extra rotations so the wheel spins visually, then compute
+      // the exact duration needed for seamless speed matching.
+      const baseTotal = remaining + 360; // at least 1 full rotation + landing offset
+      const N = Math.max(1, Math.round(baseTotal / 360));
+      const decelTotal = N * 360 + remaining;
+      const dynamicDuration = decelTotal * 5000 / (SPIN_SPEED * 60);
 
       decelFromRef.current = currentAngle;
-      decelTotalRef.current = extraSpins + remaining;
+      decelTotalRef.current = decelTotal;
+      decelDurationRef.current = Math.max(2500, Math.min(7000, dynamicDuration));
       decelStartRef.current = performance.now();
     } catch (err) {
       // Network error during spin
