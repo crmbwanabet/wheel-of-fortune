@@ -152,8 +152,8 @@ export default function WheelWidget({ prefillUserId = null }) {
   const pointerElRef = useRef(null);
   const prevWheelAngleRef = useRef(0);
 
-  const DECEL_DURATION = 3500; // 3.5 seconds
-  const SPIN_SPEED = 8;       // degrees per frame at full speed
+  const DECEL_DURATION = 5000; // 5 seconds of gradual slowdown
+  const SPIN_SPEED = 20;      // fast free spin — visible brake when STOP pressed
 
   // Spring-damper parameters (per-frame units)
   const SPRING_STIFFNESS = 0.3;
@@ -413,16 +413,14 @@ export default function WheelWidget({ prefillUserId = null }) {
       let remaining = targetRemainder - (currentAngle % 360);
       if (remaining <= 0) remaining += 360;
 
-      // Smooth deceleration: 3 extra rotations + landing offset.
-      // Duration is calculated so initial decel speed EXACTLY matches free-spin speed.
-      // easeOutCubic'(0) = 3, so: duration_ms = decelTotal * 3000 / (SPIN_SPEED * 60)
-      // This guarantees zero speed jump at the transition point.
+      // 3 extra rotations + landing, fixed 5s duration.
+      // Free spin is fast (20 deg/frame), decel starts at ~13 deg/frame —
+      // intentional visible brake effect when STOP is pressed.
       const decelTotal = 3 * 360 + remaining;
-      const dynamicDuration = decelTotal * 3000 / (SPIN_SPEED * 60);
 
       decelFromRef.current = currentAngle;
       decelTotalRef.current = decelTotal;
-      decelDurationRef.current = dynamicDuration;
+      decelDurationRef.current = DECEL_DURATION;
       decelStartRef.current = performance.now();
     } catch (err) {
       // Network error during spin
