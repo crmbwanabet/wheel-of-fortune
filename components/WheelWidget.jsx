@@ -297,8 +297,14 @@ export default function WheelWidget({ prefillUserId = null }) {
       const currentAngle = spinAngleRef.current;
       let remaining = targetRemainder - (currentAngle % 360);
       if (remaining <= 0) remaining += 360;
-      // Add 2-3 extra full rotations for visual satisfaction
-      const extraSpins = (2 + Math.floor(Math.random() * 2)) * 360;
+
+      // Match initial decel speed to free-spin speed for smooth transition.
+      // easeOutCubic derivative at t=0 is 3, so initialSpeed = 3 * totalDist / duration.
+      // We want initialSpeed = SPIN_SPEED * 60 (approx fps), so:
+      const idealTotal = (SPIN_SPEED * 60 * DECEL_DURATION) / 3000; // in degrees
+      // Round up to whole rotations + remaining to land on target
+      const minSpins = Math.ceil((idealTotal - remaining) / 360);
+      const extraSpins = Math.max(minSpins, 2) * 360;
 
       decelFromRef.current = currentAngle;
       decelTotalRef.current = extraSpins + remaining;
