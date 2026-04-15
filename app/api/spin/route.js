@@ -64,7 +64,8 @@ export async function POST(request) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }
 
-  const { customerId, fingerprint } = body;
+  const { customerId, fingerprint, test } = body;
+  const isTestMode = test === true;
 
   if (!customerId || typeof customerId !== 'string' || customerId.trim() === '') {
     return NextResponse.json({ error: 'missing_customer_id' }, { status: 400 });
@@ -74,31 +75,34 @@ export async function POST(request) {
   const dayDate = getWheelDayDate();
   const supabase = getSupabase();
 
-  // Check: has this customer already spun today?
-  const { data: existingSpin } = await supabase
-    .from('wheel_spin_log')
-    .select('id')
-    .eq('day_date', dayDate)
-    .eq('customer_id', cleanId)
-    .limit(1)
-    .single();
-
-  if (existingSpin) {
-    return NextResponse.json({ error: 'already_spun' });
-  }
-
-  // Check: has this fingerprint already spun today?
-  if (fingerprint) {
-    const { data: fpSpin } = await supabase
+  // Skip duplicate checks in test mode
+  if (!isTestMode) {
+    // Check: has this customer already spun today?
+    const { data: existingSpin } = await supabase
       .from('wheel_spin_log')
       .select('id')
       .eq('day_date', dayDate)
-      .eq('fingerprint', fingerprint)
+      .eq('customer_id', cleanId)
       .limit(1)
       .single();
 
-    if (fpSpin) {
+    if (existingSpin) {
       return NextResponse.json({ error: 'already_spun' });
+    }
+
+    // Check: has this fingerprint already spun today?
+    if (fingerprint) {
+      const { data: fpSpin } = await supabase
+        .from('wheel_spin_log')
+        .select('id')
+        .eq('day_date', dayDate)
+        .eq('fingerprint', fingerprint)
+        .limit(1)
+        .single();
+
+      if (fpSpin) {
+        return NextResponse.json({ error: 'already_spun' });
+      }
     }
   }
 

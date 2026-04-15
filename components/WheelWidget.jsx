@@ -146,11 +146,14 @@ export default function WheelWidget({ prefillUserId = null }) {
     setTimeout(() => setFloatingNums(prev => prev.filter(n => n.id !== id)), 1200);
   }, []);
 
+  // Test mode: ?test=1 bypasses localStorage check for repeated testing
+  const isTestMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('test') === '1';
+
   // On mount: check localStorage + generate fingerprint
   useEffect(() => {
     generateFingerprint().then(fp => { fingerprintRef.current = fp; }).catch(() => {});
 
-    if (hasSpunToday()) {
+    if (!isTestMode && hasSpunToday()) {
       setScreen('done');
     } else {
       setScreen('prompt');
@@ -256,7 +259,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       const res = await fetch('/api/spin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId: customerId.trim(), fingerprint: fingerprintRef.current }),
+        body: JSON.stringify({ customerId: customerId.trim(), fingerprint: fingerprintRef.current, test: isTestMode }),
       });
       const data = await res.json();
 
@@ -299,11 +302,11 @@ export default function WheelWidget({ prefillUserId = null }) {
     }
   }, [customerId]);
 
-  // CLAIM — transition to done
+  // CLAIM — transition to done (or back to prompt in test mode)
   const claimPrize = useCallback(() => {
     if (!spinResult) return;
     setSpinResult(null);
-    setScreen('done');
+    setScreen(isTestMode ? 'prompt' : 'done');
     if (spinResult && !spinResult.isLoss) {
       const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
       spawnParticles(cx, cy, 20, { spread: 300, speed: 10, life: 35, gravity: 0.22, emojis: ['🎉','🪙','💰'] });
@@ -396,33 +399,7 @@ export default function WheelWidget({ prefillUserId = null }) {
   }
 
   // ============================================================
-  // DONE SCREEN — Try Again Tomorrow
-  // ============================================================
-  if (screen === 'done') {
-    return (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
-        <div className="relative text-center p-8 rounded-2xl max-w-xs w-full mx-4" style={{
-          background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
-          border: '3px solid #3a3f52',
-          boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
-        }}>
-          {/* Close button */}
-          <button type="button" onClick={handleClose}
-            className="absolute top-3 right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
-            style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 2px 8px rgba(239,68,68,0.5)' }}>
-            <X className="w-5 h-5 text-white" strokeWidth={3} />
-          </button>
-
-          <div className="text-5xl mb-3">😢</div>
-          <h2 className="text-2xl font-black text-gray-200 mb-2">Try Again Tomorrow!</h2>
-          <p className="text-gray-400 text-sm">Come back after 6:00 AM for a new spin.</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ============================================================
-  // WHEEL SCREEN — spinning / stopping / result
+  // WHEEL SCREEN — spinning / stopping / result / done
   // ============================================================
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
@@ -504,6 +481,31 @@ export default function WheelWidget({ prefillUserId = null }) {
               style={spinResult.isLoss ? {} : { '--btn-shadow': '#065F46', '--btn-glow': 'rgba(16,185,129,0.3)', '--btn-glow2': 'rgba(16,185,129,0.15)', animation: 'collectBtnPulse 2s ease-in-out infinite' }}
             >
               {spinResult.isLoss ? 'OK' : 'Claim Prize!'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* DONE OVERLAY — Try Again Tomorrow (over the wheel)           */}
+      {/* ============================================================ */}
+      {screen === 'done' && !spinResult && (
+        <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
+          <div className="text-center p-8 rounded-3xl max-w-xs w-full mx-4" style={{
+            background: 'linear-gradient(180deg, rgba(30,40,60,0.95), rgba(15,20,35,0.98))',
+            border: '2px solid rgba(156,163,175,0.3)',
+            boxShadow: '0 0 60px rgba(100,100,100,0.1), 0 20px 60px rgba(0,0,0,0.5)',
+            animation: 'resultZoom 0.5s cubic-bezier(0.34,1.56,0.64,1) both',
+          }}>
+            <div className="text-6xl mb-3">😢</div>
+            <h2 className="text-2xl font-black text-gray-200 mb-2">Try Again Tomorrow!</h2>
+            <p className="text-gray-400 text-sm mb-6">Come back tomorrow for a new spin.</p>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="w-full py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-500/20"
+            >
+              Close
             </button>
           </div>
         </div>
