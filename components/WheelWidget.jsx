@@ -160,64 +160,71 @@ export default function WheelWidget({ prefillUserId = null }) {
     }
   }, []);
 
-  // Main animation loop — runs when screen is spinning/stopping/result
+  // Main animation loop — runs while screen is spinning or stopping
+  const spinActiveRef = useRef(false);
   useEffect(() => {
-    if (screen !== 'spinning' && screen !== 'stopping' && screen !== 'result') return;
-    // Only start the loop when transitioning TO spinning
-    if (screen !== 'spinning') return;
+    const isActive = screen === 'spinning' || screen === 'stopping';
+    if (isActive && !spinActiveRef.current) {
+      // Start the loop
+      spinActiveRef.current = true;
+      let cancelled = false;
+      const loop = (timestamp) => {
+        if (cancelled) return;
+        // DECELERATING — time-based easing
+        if (decelStartRef.current !== null) {
+          const elapsed = timestamp - decelStartRef.current;
+          const t = Math.min(elapsed / DECEL_DURATION, 1);
+          const progress = easeOutCubic(t);
+          spinAngleRef.current = decelFromRef.current + decelTotalRef.current * progress;
 
-    let cancelled = false;
-    const loop = (timestamp) => {
-      if (cancelled) return;
-      // DECELERATING — time-based easing
-      if (decelStartRef.current !== null) {
-        const elapsed = timestamp - decelStartRef.current;
-        const t = Math.min(elapsed / DECEL_DURATION, 1);
-        const progress = easeOutCubic(t);
-        spinAngleRef.current = decelFromRef.current + decelTotalRef.current * progress;
-
-        if (wheelRef.current) {
-          wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
-        }
-
-        if (t >= 1) {
-          // Deceleration complete — show result
-          decelStartRef.current = null;
-          const segment = winSegmentRef.current;
-          setScreen('result');
-          setPointerBouncing(false);
-          setSpinResult(segment);
-
-          if (segment && !segment.isLoss) {
-            setShowFlash(true);
-            setWheelConfetti(true);
-            setTimeout(() => setShowFlash(false), 400);
-            setTimeout(() => setWheelConfetti(false), 3000);
-            const cx = window.innerWidth / 2, cy = window.innerHeight * 0.45;
-            spawnParticles(cx, cy, 25, { spread: 250, speed: 9, life: 40, gravity: 0.2, emojis: ['🪙','💰','✨','🎉'] });
-            spawnParticles(cx, cy, 15, { spread: 180, speed: 6, life: 30, gravity: 0.15, emojis: ['✨','🌟','💫'] });
-            startLoop();
-            if (segment.prize?.kwacha) spawnFloatingNumber(`+K${segment.prize.kwacha}`, cx, cy - 40, '#fbbf24');
+          if (wheelRef.current) {
+            wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
           }
-          spinFrameRef.current = null;
-          return; // stop loop
+
+          if (t >= 1) {
+            // Deceleration complete — show result
+            decelStartRef.current = null;
+            spinActiveRef.current = false;
+            const segment = winSegmentRef.current;
+            setScreen('result');
+            setPointerBouncing(false);
+            setSpinResult(segment);
+
+            if (segment && !segment.isLoss) {
+              setShowFlash(true);
+              setWheelConfetti(true);
+              setTimeout(() => setShowFlash(false), 400);
+              setTimeout(() => setWheelConfetti(false), 3000);
+              const cx = window.innerWidth / 2, cy = window.innerHeight * 0.45;
+              spawnParticles(cx, cy, 25, { spread: 250, speed: 9, life: 40, gravity: 0.2, emojis: ['🪙','💰','✨','🎉'] });
+              spawnParticles(cx, cy, 15, { spread: 180, speed: 6, life: 30, gravity: 0.15, emojis: ['✨','🌟','💫'] });
+              startLoop();
+              if (segment.prize?.kwacha) spawnFloatingNumber(`+K${segment.prize.kwacha}`, cx, cy - 40, '#fbbf24');
+            }
+            spinFrameRef.current = null;
+            return; // stop loop
+          }
+        } else {
+          // FREE SPINNING — constant speed
+          spinAngleRef.current += SPIN_SPEED;
+          if (wheelRef.current) {
+            wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
+          }
         }
-      } else {
-        // FREE SPINNING — constant speed
-        spinAngleRef.current += SPIN_SPEED;
-        if (wheelRef.current) {
-          wheelRef.current.style.transform = `rotate(${spinAngleRef.current}deg)`;
-        }
-      }
+        spinFrameRef.current = requestAnimationFrame(loop);
+      };
       spinFrameRef.current = requestAnimationFrame(loop);
-    };
-    spinFrameRef.current = requestAnimationFrame(loop);
-    return () => {
-      cancelled = true;
-      if (spinFrameRef.current) { cancelAnimationFrame(spinFrameRef.current); spinFrameRef.current = null; }
-    };
+      return () => {
+        cancelled = true;
+        spinActiveRef.current = false;
+        if (spinFrameRef.current) { cancelAnimationFrame(spinFrameRef.current); spinFrameRef.current = null; }
+      };
+    }
+    if (!isActive) {
+      spinActiveRef.current = false;
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen === 'spinning']);
+  }, [screen]);
 
   // Validate customer ID and start playing
   const handleValidateAndPlay = useCallback(async () => {
