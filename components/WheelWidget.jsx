@@ -159,8 +159,8 @@ export default function WheelWidget({ prefillUserId = null }) {
   const SPRING_STIFFNESS = 0.3;
   const SPRING_DAMPING = 0.15;
 
-  // easeOutQuint: softer tail than cubic for more anticipation
-  const easeOutQuint = (t) => 1 - Math.pow(1 - t, 5);
+  // easeOutCubic: gradual, even deceleration (quint was too extreme — stopped halfway)
+  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
   // Keep screenRef in sync
   useEffect(() => { screenRef.current = screen; }, [screen]);
@@ -235,7 +235,7 @@ export default function WheelWidget({ prefillUserId = null }) {
         if (decelStartRef.current !== null) {
           const elapsed = timestamp - decelStartRef.current;
           const t = Math.min(elapsed / decelDurationRef.current, 1);
-          const progress = easeOutQuint(t);
+          const progress = easeOutCubic(t);
           currentAngle = decelFromRef.current + decelTotalRef.current * progress;
           spinAngleRef.current = currentAngle;
 
@@ -413,12 +413,12 @@ export default function WheelWidget({ prefillUserId = null }) {
       let remaining = targetRemainder - (currentAngle % 360);
       if (remaining <= 0) remaining += 360;
 
-      // Smooth deceleration: 1 extra rotation + landing offset.
+      // Smooth deceleration: 3 extra rotations + landing offset.
       // Duration is calculated so initial decel speed EXACTLY matches free-spin speed.
-      // easeOutQuint'(0) = 5, so: duration_ms = decelTotal * 5000 / (SPIN_SPEED * 60)
+      // easeOutCubic'(0) = 3, so: duration_ms = decelTotal * 3000 / (SPIN_SPEED * 60)
       // This guarantees zero speed jump at the transition point.
-      const decelTotal = 360 + remaining;
-      const dynamicDuration = decelTotal * 5000 / (SPIN_SPEED * 60);
+      const decelTotal = 3 * 360 + remaining;
+      const dynamicDuration = decelTotal * 3000 / (SPIN_SPEED * 60);
 
       decelFromRef.current = currentAngle;
       decelTotalRef.current = decelTotal;
