@@ -944,13 +944,13 @@ export default function WheelWidget({ prefillUserId = null }) {
                   if (seg.isLoss) {
                     return (
                       <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
-                        <text x={150 + 88} y={150 - 6} textAnchor="middle" dominantBaseline="central"
-                          fill="white" fontSize="9.5" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                        <text x={150 + 100} y={150 - 7} textAnchor="middle" dominantBaseline="central"
+                          fill="white" fontSize="11" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
                           stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
                           TRY AGAIN
                         </text>
-                        <text x={150 + 88} y={150 + 6} textAnchor="middle" dominantBaseline="central"
-                          fill="white" fontSize="9.5" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                        <text x={150 + 100} y={150 + 7} textAnchor="middle" dominantBaseline="central"
+                          fill="white" fontSize="11" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
                           stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
                           TOMORROW
                         </text>
@@ -959,9 +959,10 @@ export default function WheelWidget({ prefillUserId = null }) {
                   }
                   return (
                     <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
-                      <text x={150 + 85} y={150} textAnchor="middle" dominantBaseline="central"
-                        fill="white" fontSize="22" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
-                        stroke="rgba(0,0,0,0.6)" strokeWidth="3" paintOrder="stroke" letterSpacing="2">
+                      <text x={150 + 105} y={150} textAnchor="middle" dominantBaseline="central"
+                        fill="white" fontSize="28" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                        stroke="rgba(0,0,0,0.6)" strokeWidth="3" paintOrder="stroke" letterSpacing="2"
+                        transform={`rotate(180, ${150 + 105}, 150)`}>
                         {seg.label}
                       </text>
                     </g>
@@ -971,7 +972,7 @@ export default function WheelWidget({ prefillUserId = null }) {
             </div>
 
             {/* === CENTER HUB with STOP button === */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20" style={{ width: '22%', height: '22%' }}>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20" style={{ width: '30%', height: '30%' }}>
               <svg viewBox="0 0 90 90" className="w-full h-full">
                 <defs>
                   <radialGradient id="hubSphere" cx="38%" cy="28%" r="65%">
@@ -1001,7 +1002,8 @@ export default function WheelWidget({ prefillUserId = null }) {
                     <stop offset="100%" stopColor="#fff" stopOpacity="0.08" />
                   </radialGradient>
                 </defs>
-                <circle cx="45" cy="45" r="44" fill="none" stroke="url(#hubChrome)" strokeWidth="5" />
+                <circle cx="45" cy="45" r="44" fill="none" stroke="url(#hubChrome)" strokeWidth="5"
+                  style={screen === 'spinning' ? { animation: 'hubRingPulse 0.4s ease-in-out infinite' } : {}} />
                 <circle cx="45" cy="45" r="39" fill="url(#hubSphere)" />
                 <circle cx="45" cy="45" r="39" fill="url(#hubRim)" />
                 <ellipse cx="36" cy="32" rx="18" ry="14" fill="url(#hubSpec)" />
@@ -1014,11 +1016,11 @@ export default function WheelWidget({ prefillUserId = null }) {
                   screen === 'spinning' ? 'hover:scale-110 active:scale-90 cursor-pointer' : 'cursor-default'
                 }`}
               >
-                <span className={`font-black text-base sm:text-lg tracking-wider ${screen !== 'spinning' ? 'opacity-40' : ''}`} style={{
+                <span className={`font-black text-xl sm:text-2xl tracking-wider ${screen !== 'spinning' ? 'opacity-40' : ''}`} style={{
                   background: 'linear-gradient(180deg, #ff9999 0%, #ef4444 40%, #b91c1c 100%)',
                   WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                   filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.9))',
-                  ...(screen === 'spinning' ? { animation: 'stopFlash 1s ease-in-out infinite' } : {}),
+                  ...(screen === 'spinning' ? { animation: 'stopFlash 0.4s ease-in-out infinite' } : {}),
                 }}>STOP</span>
               </button>
             </div>
