@@ -61,6 +61,12 @@
         <button class="btn btn-blue" onclick="reloadEmbed()">Reload Widget</button>
         <button class="btn btn-gray" onclick="checkStatus()">Check Status</button>
       </div>
+      <div class="controls">
+        <button class="btn btn-blue" onclick="setForceWin(200)" style="background:#16a34a;">Force Win K200</button>
+        <button class="btn btn-blue" onclick="setForceWin(100)" style="background:#ca8a04;">Force Win K100</button>
+        <button class="btn btn-blue" onclick="setForceWin(50)" style="background:#9333ea;">Force Win K50</button>
+        <button class="btn btn-blue" onclick="setForceWin(0)" style="background:#6b7280;">Normal Mode</button>
+      </div>
       <div style="margin-top: 12px;">
         <span>Trigger button: </span>
         <span id="trigger-status" class="status status-active"><span class="dot dot-green"></span> Visible</span>
@@ -148,13 +154,13 @@
       var oldScript = document.getElementById('bw-embed-script');
       if (oldScript) oldScript.remove();
 
-      window.BWANABET_WIDGET_URL = window.location.origin + '?test=1';
+      window.BWANABET_WIDGET_URL = getWidgetUrl();
       var s = document.createElement('script');
       s.id = 'bw-embed-script';
       s.src = '/embed.js?t=' + Date.now();
       document.body.appendChild(s);
 
-      log('Widget embed reloaded (test mode)', 'info');
+      log('Widget embed reloaded' + (currentForceWin ? ' (force win K' + currentForceWin + ')' : ' (normal)'), 'info');
       setTimeout(updateStatus, 500);
     }
 
@@ -183,8 +189,22 @@
     // Initial load
     log('Test page loaded', 'info');
 
+    var currentForceWin = 0;
+
+    function setForceWin(amount) {
+      currentForceWin = amount;
+      log(amount ? 'Force win set to K' + amount + ' — next spin will win!' : 'Normal mode — wins based on algorithm', 'info');
+      reloadEmbed();
+    }
+
+    function getWidgetUrl() {
+      var url = window.location.origin + '?test=1';
+      if (currentForceWin) url += '&forceWin=' + currentForceWin;
+      return url;
+    }
+
     // Load embed script in test mode (bypasses widget's own localStorage check)
-    window.BWANABET_WIDGET_URL = window.location.origin + '?test=1';
+    window.BWANABET_WIDGET_URL = getWidgetUrl();
     var s = document.createElement('script');
     s.id = 'bw-embed-script';
     s.src = '/embed.js';

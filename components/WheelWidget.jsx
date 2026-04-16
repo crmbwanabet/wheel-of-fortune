@@ -206,7 +206,9 @@ export default function WheelWidget({ prefillUserId = null }) {
   }, []);
 
   // Test mode: ?test=1 bypasses localStorage check for repeated testing
-  const isTestMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('test') === '1';
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isTestMode = searchParams?.get('test') === '1';
+  const forceWinParam = searchParams?.get('forceWin');
 
   // On mount: check localStorage + generate fingerprint
   useEffect(() => {
@@ -425,7 +427,7 @@ export default function WheelWidget({ prefillUserId = null }) {
     fetch('/api/spin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId: customerId.trim(), fingerprint: fingerprintRef.current, test: isTestMode }),
+      body: JSON.stringify({ customerId: customerId.trim(), fingerprint: fingerprintRef.current, test: isTestMode, ...(forceWinParam ? { forceWin: Number(forceWinParam) || true } : {}) }),
     })
       .then(res => res.json())
       .then(data => {

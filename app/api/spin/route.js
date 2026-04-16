@@ -64,7 +64,7 @@ export async function POST(request) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }
 
-  const { customerId, fingerprint, test } = body;
+  const { customerId, fingerprint, test, forceWin } = body;
   const isTestMode = test === true;
 
   if (!customerId || typeof customerId !== 'string' || customerId.trim() === '') {
@@ -153,8 +153,15 @@ export async function POST(request) {
   const spinNumber = dailyState.total_spins;
   const winningPositions = dailyState.winning_positions;
 
-  const prizeAmount = winningPositions[String(spinNumber)];
-  const isWin = prizeAmount !== undefined;
+  let prizeAmount = winningPositions[String(spinNumber)];
+  let isWin = prizeAmount !== undefined;
+
+  // Test mode: force a win with a specific prize amount
+  if (isTestMode && forceWin) {
+    const forceAmount = typeof forceWin === 'number' ? forceWin : 200;
+    prizeAmount = forceAmount;
+    isWin = true;
+  }
 
   let segmentIndex;
   let finalPrize = 0;
