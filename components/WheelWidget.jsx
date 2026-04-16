@@ -144,6 +144,9 @@ export default function WheelWidget({ prefillUserId = null }) {
   const brakingRef = useRef(false);
   const brakingSpeedRef = useRef(0);
 
+  // API result ref — .then() stores result here, animation loop picks it up at frame boundary
+  const pendingResultRef = useRef(null);
+
   // Easing refs — smooth landing on target segment (set when API responds)
   const decelStartRef = useRef(null);
   const decelFromRef = useRef(0);
@@ -239,10 +242,8 @@ export default function WheelWidget({ prefillUserId = null }) {
           const elapsed = timestamp - decelStartRef.current;
           const t = Math.min(elapsed / decelDurationRef.current, 1);
           const progress = easeOutCubic(t);
-          const prevAngle = spinAngleRef.current;
           currentAngle = decelFromRef.current + decelTotalRef.current * progress;
           spinAngleRef.current = currentAngle;
-          if (elapsed < 100) console.log('[PHASE3] elapsed:', elapsed.toFixed(1), 'frameDelta:', (currentAngle - prevAngle).toFixed(2), 'brakeSpeedWas:', brakingSpeedRef.current.toFixed(2));
 
           if (wheelRef.current) {
             wheelRef.current.style.transform = `rotate(${currentAngle}deg)`;
@@ -302,6 +303,31 @@ export default function WheelWidget({ prefillUserId = null }) {
           currentAngle = spinAngleRef.current;
           if (wheelRef.current) {
             wheelRef.current.style.transform = `rotate(${currentAngle}deg)`;
+          }
+
+          // Check if API result arrived — transition to easing AT this frame boundary
+          if (pendingResultRef.current) {
+            const { winIndex, data } = pendingResultRef.current;
+            pendingResultRef.current = null;
+
+            winSegmentRef.current = WHEEL_SEGMENTS[winIndex];
+
+            const segCenter = winIndex * SEG_ANGLE + SEG_ANGLE / 2;
+            const jitter = (Math.random() - 0.5) * (SEG_ANGLE * 0.5);
+            const targetRemainder = (360 - segCenter + jitter + 360) % 360;
+            let remaining = targetRemainder - (currentAngle % 360);
+            if (remaining <= 0) remaining += 360;
+
+            const currentSpeed = brakingSpeedRef.current;
+            const extraRotations = currentSpeed > 12 ? 3 : currentSpeed > 6 ? 2 : 1;
+            const decelTotal = extraRotations * 360 + remaining;
+            const duration = decelTotal * 50 / currentSpeed;
+
+            decelFromRef.current = currentAngle;
+            decelTotalRef.current = decelTotal;
+            decelDurationRef.current = duration;
+            decelStartRef.current = timestamp; // Use rAF timestamp — exact frame boundary
+            brakingRef.current = false;
           }
 
         // PHASE 1: FREE SPIN — constant speed
@@ -403,36 +429,9 @@ export default function WheelWidget({ prefillUserId = null }) {
         if (data.error) {
           brakingRef.current = false; setScreen('done'); return;
         }
-
-        const winIndex = data.segmentIndex;
-        winSegmentRef.current = WHEEL_SEGMENTS[winIndex];
         markSpun();
-
-        // Calculate target angle
-        const segCenter = winIndex * SEG_ANGLE + SEG_ANGLE / 2;
-        const jitter = (Math.random() - 0.5) * (SEG_ANGLE * 0.5);
-        const targetRemainder = (360 - segCenter + jitter + 360) % 360;
-        const currentAngle = spinAngleRef.current;
-        let remaining = targetRemainder - (currentAngle % 360);
-        if (remaining <= 0) remaining += 360;
-
-        // Extra rotations proportional to current speed (more if still fast)
-        const currentSpeed = brakingSpeedRef.current;
-        const extraRotations = currentSpeed > 12 ? 3 : currentSpeed > 6 ? 2 : 1;
-        const decelTotal = extraRotations * 360 + remaining;
-
-        // Duration matched to current braking speed for seamless transition
-        // easeOutCubic'(0)=3: initialSpeed = decelTotal * 3 / duration * (1000/60)
-        // Solve for duration so easing starts at exactly currentSpeed
-        const duration = decelTotal * 50 / currentSpeed;
-
-        console.log('[TRANSITION] brakeSpeed:', currentSpeed.toFixed(2), 'decelTotal:', decelTotal.toFixed(0), 'duration:', duration.toFixed(0), 'easingInitialSpeed:', (decelTotal * 3 / duration * 16.67).toFixed(2));
-
-        decelFromRef.current = currentAngle;
-        decelTotalRef.current = decelTotal;
-        decelDurationRef.current = duration;
-        decelStartRef.current = performance.now();
-        brakingRef.current = false;
+        // Store result — animation loop picks it up at next frame boundary
+        pendingResultRef.current = { winIndex: data.segmentIndex, data };
       })
       .catch(() => {
         brakingRef.current = false;
