@@ -457,6 +457,13 @@ export default function WheelWidget({ prefillUserId = null }) {
     window.parent.postMessage({ type: 'bwanabet-wheel-close' }, '*');
   }, []);
 
+  // Notify parent when user has spun (result or done screen)
+  useEffect(() => {
+    if (screen === 'result' || screen === 'done') {
+      window.parent.postMessage({ type: 'bwanabet-wheel-spun' }, '*');
+    }
+  }, [screen]);
+
   if (closed) return null;
 
   const WHEEL_SIZE = 320;
