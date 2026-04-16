@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BwanaBet - Widget Test Page</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
+    .header { background: linear-gradient(135deg, #0f3460, #16213e); padding: 16px 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .header h1 { font-size: 20px; color: #fbbf24; }
+    .header span { font-size: 13px; color: #888; }
+    .content { max-width: 900px; margin: 40px auto; padding: 0 24px; }
+    .card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 24px; margin-bottom: 24px; }
+    .card h2 { font-size: 16px; color: #fbbf24; margin-bottom: 12px; }
+    .card p { font-size: 14px; color: #999; line-height: 1.6; }
+    .controls { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+    .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-red { background: #ef4444; color: white; }
+    .btn-red:hover { background: #dc2626; }
+    .btn-blue { background: #3b82f6; color: white; }
+    .btn-blue:hover { background: #2563eb; }
+    .btn-gray { background: #374151; color: #ccc; }
+    .btn-gray:hover { background: #4b5563; }
+    .log { background: #0a0a1a; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 16px; margin-top: 16px; max-height: 200px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.8; }
+    .log .entry { border-bottom: 1px solid rgba(255,255,255,0.03); padding: 2px 0; }
+    .log .time { color: #666; }
+    .log .type-close { color: #f87171; }
+    .log .type-spun { color: #34d399; }
+    .log .type-info { color: #60a5fa; }
+    .status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 8px; }
+    .status-active { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .status-hidden { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; }
+    .dot-green { background: #22c55e; }
+    .dot-red { background: #ef4444; }
+    .fake-site { background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 32px; min-height: 300px; position: relative; overflow: hidden; }
+    .fake-nav { display: flex; gap: 24px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 24px; }
+    .fake-nav span { font-size: 13px; color: #666; }
+    .fake-nav span:first-child { color: #fbbf24; font-weight: 600; }
+    .fake-content { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .fake-card { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 20px; }
+    .fake-card .title { font-size: 14px; color: #aaa; margin-bottom: 8px; }
+    .fake-card .value { font-size: 24px; font-weight: 700; color: white; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>BwanaBet Widget Test</h1>
+    <span>Simulated host page for embed testing</span>
+  </div>
+
+  <div class="content">
+
+    <div class="card">
+      <h2>Controls</h2>
+      <p>Manage the widget state for testing. Clear localStorage to reset the spin state and make the button reappear.</p>
+      <div class="controls">
+        <button class="btn btn-red" onclick="clearSpin()">Clear Spin (Reset)</button>
+        <button class="btn btn-blue" onclick="reloadEmbed()">Reload Widget</button>
+        <button class="btn btn-gray" onclick="checkStatus()">Check Status</button>
+      </div>
+      <div style="margin-top: 12px;">
+        <span>Trigger button: </span>
+        <span id="trigger-status" class="status status-active"><span class="dot dot-green"></span> Visible</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Simulated Site (bwanabet.com)</h2>
+      <p style="margin-bottom:16px;">The present box trigger appears on the right side. Click it to open the wheel.</p>
+      <div class="fake-site" id="fake-site">
+        <div class="fake-nav">
+          <span>BwanaBet</span>
+          <span>Sports</span>
+          <span>Casino</span>
+          <span>Live</span>
+          <span>Promotions</span>
+        </div>
+        <div class="fake-content">
+          <div class="fake-card">
+            <div class="title">Balance</div>
+            <div class="value">K 1,250</div>
+          </div>
+          <div class="fake-card">
+            <div class="title">Active Bets</div>
+            <div class="value">3</div>
+          </div>
+          <div class="fake-card">
+            <div class="title">Today's Odds</div>
+            <div class="value" style="color:#22c55e;">+145</div>
+          </div>
+          <div class="fake-card">
+            <div class="title">Free Spins</div>
+            <div class="value" style="color:#fbbf24;">1 Left</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Event Log</h2>
+      <p>Messages received from the widget iframe.</p>
+      <div class="log" id="log"></div>
+    </div>
+
+  </div>
+
+  <script>
+    var logEl = document.getElementById('log');
+    var statusEl = document.getElementById('trigger-status');
+
+    function log(msg, type) {
+      var t = new Date().toLocaleTimeString();
+      var div = document.createElement('div');
+      div.className = 'entry';
+      div.innerHTML = '<span class="time">[' + t + ']</span> <span class="type-' + (type || 'info') + '">' + msg + '</span>';
+      logEl.prepend(div);
+    }
+
+    function updateStatus() {
+      var trigger = document.getElementById('bwanabet-wheel-trigger');
+      if (trigger && trigger.style.display !== 'none') {
+        statusEl.className = 'status status-active';
+        statusEl.innerHTML = '<span class="dot dot-green"></span> Visible';
+      } else {
+        statusEl.className = 'status status-hidden';
+        statusEl.innerHTML = '<span class="dot dot-red"></span> Hidden (already spun)';
+      }
+    }
+
+    function clearSpin() {
+      localStorage.removeItem('bwanabet_wheel_spun');
+      localStorage.removeItem('bwanabet_wheel_spin');
+      log('Cleared spin localStorage. Reloading widget...', 'info');
+      reloadEmbed();
+    }
+
+    function reloadEmbed() {
+      // Remove old embed elements
+      var oldTrigger = document.getElementById('bwanabet-wheel-trigger');
+      var oldOverlay = document.getElementById('bwanabet-wheel-overlay');
+      var oldStyle = document.querySelector('style[data-bw]');
+      if (oldTrigger) oldTrigger.remove();
+      if (oldOverlay) oldOverlay.remove();
+
+      // Reload script
+      var oldScript = document.getElementById('bw-embed-script');
+      if (oldScript) oldScript.remove();
+
+      var s = document.createElement('script');
+      s.id = 'bw-embed-script';
+      s.src = '/embed.js?t=' + Date.now();
+      document.body.appendChild(s);
+
+      log('Widget embed reloaded', 'info');
+      setTimeout(updateStatus, 500);
+    }
+
+    function checkStatus() {
+      var stored = localStorage.getItem('bwanabet_wheel_spun');
+      if (stored) {
+        log('localStorage: ' + stored, 'info');
+      } else {
+        log('localStorage: empty (no spin recorded)', 'info');
+      }
+      updateStatus();
+    }
+
+    // Listen for widget messages
+    window.addEventListener('message', function(e) {
+      if (!e.data || !e.data.type) return;
+      if (e.data.type === 'bwanabet-wheel-close') {
+        log('Widget closed by user', 'close');
+      }
+      if (e.data.type === 'bwanabet-wheel-spun') {
+        log('Spin complete! Button will hide.', 'spun');
+        setTimeout(updateStatus, 2500);
+      }
+    });
+
+    // Initial load
+    log('Test page loaded', 'info');
+
+    // Load embed script
+    var s = document.createElement('script');
+    s.id = 'bw-embed-script';
+    s.src = '/embed.js';
+    document.body.appendChild(s);
+    setTimeout(updateStatus, 500);
+  </script>
+
+</body>
+</html>
