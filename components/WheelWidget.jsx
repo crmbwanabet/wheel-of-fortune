@@ -416,12 +416,13 @@ export default function WheelWidget({ prefillUserId = null }) {
 
         // Extra rotations proportional to current speed (more if still fast)
         const currentSpeed = brakingSpeedRef.current;
-        const extraRotations = Math.max(2, Math.ceil(currentSpeed * 0.2));
+        const extraRotations = currentSpeed > 12 ? 3 : currentSpeed > 6 ? 2 : 1;
         const decelTotal = extraRotations * 360 + remaining;
 
         // Duration matched to current braking speed for seamless transition
-        // easeOutCubic'(0)=3: speed = decelTotal * 3 / duration * (1000/60)
-        const duration = Math.max(3000, Math.min(8000, decelTotal * 50 / currentSpeed));
+        // easeOutCubic'(0)=3: initialSpeed = decelTotal * 3 / duration * (1000/60)
+        // Solve for duration so easing starts at exactly currentSpeed
+        const duration = decelTotal * 50 / currentSpeed;
 
         decelFromRef.current = currentAngle;
         decelTotalRef.current = decelTotal;
