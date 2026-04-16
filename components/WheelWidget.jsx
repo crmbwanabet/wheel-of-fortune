@@ -239,8 +239,10 @@ export default function WheelWidget({ prefillUserId = null }) {
           const elapsed = timestamp - decelStartRef.current;
           const t = Math.min(elapsed / decelDurationRef.current, 1);
           const progress = easeOutCubic(t);
+          const prevAngle = spinAngleRef.current;
           currentAngle = decelFromRef.current + decelTotalRef.current * progress;
           spinAngleRef.current = currentAngle;
+          if (elapsed < 100) console.log('[PHASE3] elapsed:', elapsed.toFixed(1), 'frameDelta:', (currentAngle - prevAngle).toFixed(2), 'brakeSpeedWas:', brakingSpeedRef.current.toFixed(2));
 
           if (wheelRef.current) {
             wheelRef.current.style.transform = `rotate(${currentAngle}deg)`;
@@ -423,6 +425,8 @@ export default function WheelWidget({ prefillUserId = null }) {
         // easeOutCubic'(0)=3: initialSpeed = decelTotal * 3 / duration * (1000/60)
         // Solve for duration so easing starts at exactly currentSpeed
         const duration = decelTotal * 50 / currentSpeed;
+
+        console.log('[TRANSITION] brakeSpeed:', currentSpeed.toFixed(2), 'decelTotal:', decelTotal.toFixed(0), 'duration:', duration.toFixed(0), 'easingInitialSpeed:', (decelTotal * 3 / duration * 16.67).toFixed(2));
 
         decelFromRef.current = currentAngle;
         decelTotalRef.current = decelTotal;
