@@ -161,7 +161,7 @@ export default function WheelWidget({ prefillUserId = null }) {
   const prevWheelAngleRef = useRef(0);
 
   const SPIN_SPEED = 20;       // fast free spin
-  const BRAKE_FRICTION = 0.99; // per-frame friction when braking (before API responds)
+  const BRAKE_FRICTION = 0.98; // per-frame friction when braking (before API responds)
 
   // Spring-damper parameters (per-frame units)
   const SPRING_STIFFNESS = 0.3;
@@ -270,27 +270,31 @@ export default function WheelWidget({ prefillUserId = null }) {
                 pointerVelRef.current = 0;
                 if (pointerElRef.current) pointerElRef.current.style.transform = 'rotate(0deg)';
 
-                spinActiveRef.current = false;
-                const segment = winSegmentRef.current;
-                setScreen('result');
-                setSpinResult(segment);
-                setShowSlowingText(false);
+                // Pause so user can see where the pointer landed before showing result
+                setTimeout(() => {
+                  if (cancelled) return;
+                  spinActiveRef.current = false;
+                  const segment = winSegmentRef.current;
+                  setScreen('result');
+                  setSpinResult(segment);
+                  setShowSlowingText(false);
 
-                if (segment && !segment.isLoss) {
-                  setShowFlash(true);
-                  setWheelConfetti(true);
-                  setShaking(true);
-                  setTimeout(() => setShowFlash(false), 400);
-                  setTimeout(() => setWheelConfetti(false), 3000);
-                  setTimeout(() => setShaking(false), 150);
-                  const cx = window.innerWidth / 2, cy = window.innerHeight * 0.45;
-                  const isMobile = window.innerWidth < 600;
-                  spawnParticles(cx, cy, isMobile ? 12 : 25, { spread: 250, speed: 9, life: isMobile ? 25 : 40, gravity: 0.2 });
-                  if (!isMobile) spawnParticles(cx, cy, 15, { spread: 180, speed: 6, life: 30, gravity: 0.15 });
-                  startLoop();
-                  if (segment.prize?.kwacha) spawnFloatingNumber(`+K${segment.prize.kwacha}`, cx, cy - 40, '#fbbf24');
-                }
-                spinFrameRef.current = null;
+                  if (segment && !segment.isLoss) {
+                    setShowFlash(true);
+                    setWheelConfetti(true);
+                    setShaking(true);
+                    setTimeout(() => setShowFlash(false), 400);
+                    setTimeout(() => setWheelConfetti(false), 3000);
+                    setTimeout(() => setShaking(false), 150);
+                    const cx = window.innerWidth / 2, cy = window.innerHeight * 0.45;
+                    const isMobile = window.innerWidth < 600;
+                    spawnParticles(cx, cy, isMobile ? 12 : 25, { spread: 250, speed: 9, life: isMobile ? 25 : 40, gravity: 0.2 });
+                    if (!isMobile) spawnParticles(cx, cy, 15, { spread: 180, speed: 6, life: 30, gravity: 0.15 });
+                    startLoop();
+                    if (segment.prize?.kwacha) spawnFloatingNumber(`+K${segment.prize.kwacha}`, cx, cy - 40, '#fbbf24');
+                  }
+                  spinFrameRef.current = null;
+                }, 1500);
               }
             };
             requestAnimationFrame(settleLoop);
