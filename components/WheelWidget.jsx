@@ -137,13 +137,18 @@ export default function WheelWidget({ prefillUserId = null }) {
   const spinAngleRef = useRef(0);
   const spinFrameRef = useRef(null);
   const wheelRef = useRef(null);
-  // Deceleration refs
-  const decelStartRef = useRef(null);   // timestamp when STOP pressed
-  const decelFromRef = useRef(0);       // angle when STOP pressed
-  const decelTotalRef = useRef(0);      // total degrees to travel during decel
-  const decelDurationRef = useRef(3500); // dynamic duration for speed matching
   const winSegmentRef = useRef(null);
   const screenRef = useRef(screen);
+
+  // Braking refs — immediate friction slowdown when STOP pressed
+  const brakingRef = useRef(false);
+  const brakingSpeedRef = useRef(0);
+
+  // Easing refs — smooth landing on target segment (set when API responds)
+  const decelStartRef = useRef(null);
+  const decelFromRef = useRef(0);
+  const decelTotalRef = useRef(0);
+  const decelDurationRef = useRef(5000);
 
   // Pointer physics refs
   const pointerAngleRef = useRef(0);
@@ -152,14 +157,13 @@ export default function WheelWidget({ prefillUserId = null }) {
   const pointerElRef = useRef(null);
   const prevWheelAngleRef = useRef(0);
 
-  const DECEL_DURATION = 5000; // 5 seconds of gradual slowdown
-  const SPIN_SPEED = 20;      // fast free spin — visible brake when STOP pressed
+  const SPIN_SPEED = 20;       // fast free spin
+  const BRAKE_FRICTION = 0.99; // per-frame friction when braking (before API responds)
 
   // Spring-damper parameters (per-frame units)
   const SPRING_STIFFNESS = 0.3;
   const SPRING_DAMPING = 0.15;
 
-  // easeOutCubic: gradual, even deceleration (quint was too extreme — stopped halfway)
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
   // Keep screenRef in sync
@@ -212,12 +216,11 @@ export default function WheelWidget({ prefillUserId = null }) {
     }
   }, []);
 
-  // Main animation loop — runs while screen is spinning or stopping
+  // Main animation loop — 3 phases: free spin → friction brake → easing to target
   const spinActiveRef = useRef(false);
   useEffect(() => {
     const isActive = screen === 'spinning' || screen === 'stopping';
     if (isActive && !spinActiveRef.current) {
-      // Start the loop
       spinActiveRef.current = true;
       lastPegIndexRef.current = -1;
       prevWheelAngleRef.current = spinAngleRef.current;
@@ -231,7 +234,7 @@ export default function WheelWidget({ prefillUserId = null }) {
 
         let currentAngle = spinAngleRef.current;
 
-        // DECELERATING — time-based easing
+        // PHASE 3: EASING TO TARGET — API has responded, landing on exact segment
         if (decelStartRef.current !== null) {
           const elapsed = timestamp - decelStartRef.current;
           const t = Math.min(elapsed / decelDurationRef.current, 1);
@@ -243,18 +246,14 @@ export default function WheelWidget({ prefillUserId = null }) {
             wheelRef.current.style.transform = `rotate(${currentAngle}deg)`;
           }
 
-          // Show "Slowing down..." in last 20% of deceleration
-          if (t > 0.8) {
-            setShowSlowingText(true);
-          }
+          if (t > 0.8) setShowSlowingText(true);
 
           if (t >= 1) {
-            // Wheel stopped — let pointer physics settle for ~500ms
+            // Wheel stopped — let pointer physics settle
             decelStartRef.current = null;
             const settleStart = performance.now();
             const settleLoop = () => {
               if (cancelled) return;
-              // Continue spring physics
               pointerVelRef.current += (-SPRING_STIFFNESS * pointerAngleRef.current - SPRING_DAMPING * pointerVelRef.current);
               pointerAngleRef.current += pointerVelRef.current;
               if (pointerElRef.current) {
@@ -264,7 +263,6 @@ export default function WheelWidget({ prefillUserId = null }) {
               if (performance.now() - settleStart < 500 && !settled) {
                 requestAnimationFrame(settleLoop);
               } else {
-                // Pointer settled — show result
                 pointerAngleRef.current = 0;
                 pointerVelRef.current = 0;
                 if (pointerElRef.current) pointerElRef.current.style.transform = 'rotate(0deg)';
@@ -292,10 +290,20 @@ export default function WheelWidget({ prefillUserId = null }) {
               }
             };
             requestAnimationFrame(settleLoop);
-            return; // exit main loop, settle loop takes over
+            return;
           }
+
+        // PHASE 2: FRICTION BRAKE — STOP pressed, waiting for API response
+        } else if (brakingRef.current) {
+          brakingSpeedRef.current *= BRAKE_FRICTION;
+          spinAngleRef.current += brakingSpeedRef.current;
+          currentAngle = spinAngleRef.current;
+          if (wheelRef.current) {
+            wheelRef.current.style.transform = `rotate(${currentAngle}deg)`;
+          }
+
+        // PHASE 1: FREE SPIN — constant speed
         } else {
-          // FREE SPINNING — constant speed
           spinAngleRef.current += SPIN_SPEED;
           currentAngle = spinAngleRef.current;
           if (wheelRef.current) {
@@ -307,12 +315,11 @@ export default function WheelWidget({ prefillUserId = null }) {
         const normalizedAngle = ((currentAngle % 360) + 360) % 360;
         const pegIndex = Math.floor(normalizedAngle / SEG_ANGLE);
         if (lastPegIndexRef.current >= 0 && pegIndex !== lastPegIndexRef.current) {
-          // Peg crossing — apply impulse scaled by wheel speed
           const wheelSpeed = Math.abs(currentAngle - prevWheelAngleRef.current);
           let impulse;
-          if (wheelSpeed >= 6) impulse = 2;       // full speed: tiny rapid flicks
-          else if (wheelSpeed >= 3) impulse = 5;   // medium: visible bounces
-          else impulse = 10;                        // near stop: big dramatic bounces
+          if (wheelSpeed >= 15) impulse = 2;       // full speed: tiny rapid flicks
+          else if (wheelSpeed >= 5) impulse = 5;    // medium: visible bounces
+          else impulse = 10;                         // near stop: big dramatic bounces
           pointerVelRef.current += impulse;
         }
         lastPegIndexRef.current = pegIndex;
@@ -321,7 +328,6 @@ export default function WheelWidget({ prefillUserId = null }) {
         // Spring-damper update
         pointerVelRef.current += (-SPRING_STIFFNESS * pointerAngleRef.current - SPRING_DAMPING * pointerVelRef.current);
         pointerAngleRef.current += pointerVelRef.current;
-        // Clamp max deflection
         pointerAngleRef.current = Math.max(-20, Math.min(20, pointerAngleRef.current));
         if (pointerElRef.current) {
           pointerElRef.current.style.transform = `rotate(${pointerAngleRef.current}deg)`;
@@ -372,60 +378,61 @@ export default function WheelWidget({ prefillUserId = null }) {
     }
   }, [customerId]);
 
-  // STOP — call server, then begin time-based deceleration
-  const stopWheel = useCallback(async () => {
+  // STOP — brake immediately, API call in background
+  const stopWheel = useCallback(() => {
     if (screenRef.current !== 'spinning') return;
     setScreen('stopping');
 
-    try {
-      const res = await fetch('/api/spin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId: customerId.trim(), fingerprint: fingerprintRef.current, test: isTestMode }),
-      });
-      const data = await res.json();
+    // Start friction brake IMMEDIATELY — no waiting for API
+    brakingRef.current = true;
+    brakingSpeedRef.current = SPIN_SPEED;
 
-      if (data.error === 'already_spun') {
+    // API call in background — when it responds, set up exact landing target
+    fetch('/api/spin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId: customerId.trim(), fingerprint: fingerprintRef.current, test: isTestMode }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error === 'already_spun') {
+          markSpun(); brakingRef.current = false; setScreen('done'); return;
+        }
+        if (data.error) {
+          brakingRef.current = false; setScreen('done'); return;
+        }
+
+        const winIndex = data.segmentIndex;
+        winSegmentRef.current = WHEEL_SEGMENTS[winIndex];
         markSpun();
+
+        // Calculate target angle
+        const segCenter = winIndex * SEG_ANGLE + SEG_ANGLE / 2;
+        const jitter = (Math.random() - 0.5) * (SEG_ANGLE * 0.5);
+        const targetRemainder = (360 - segCenter + jitter + 360) % 360;
+        const currentAngle = spinAngleRef.current;
+        let remaining = targetRemainder - (currentAngle % 360);
+        if (remaining <= 0) remaining += 360;
+
+        // Extra rotations proportional to current speed (more if still fast)
+        const currentSpeed = brakingSpeedRef.current;
+        const extraRotations = Math.max(2, Math.ceil(currentSpeed * 0.2));
+        const decelTotal = extraRotations * 360 + remaining;
+
+        // Duration matched to current braking speed for seamless transition
+        // easeOutCubic'(0)=3: speed = decelTotal * 3 / duration * (1000/60)
+        const duration = Math.max(3000, Math.min(8000, decelTotal * 50 / currentSpeed));
+
+        decelFromRef.current = currentAngle;
+        decelTotalRef.current = decelTotal;
+        decelDurationRef.current = duration;
+        decelStartRef.current = performance.now();
+        brakingRef.current = false;
+      })
+      .catch(() => {
+        brakingRef.current = false;
         setScreen('done');
-        return;
-      }
-
-      if (data.error) {
-        // Fallback: treat as loss
-        setScreen('done');
-        return;
-      }
-
-      const winIndex = data.segmentIndex;
-      const segment = WHEEL_SEGMENTS[winIndex];
-      winSegmentRef.current = segment;
-
-      // Mark as spun in localStorage
-      markSpun();
-
-      // Calculate target angle — pointer is at top, segments start at -90° (top)
-      const segCenter = winIndex * SEG_ANGLE + SEG_ANGLE / 2;
-      const jitter = (Math.random() - 0.5) * (SEG_ANGLE * 0.5);
-      const targetRemainder = (360 - segCenter + jitter + 360) % 360;
-
-      const currentAngle = spinAngleRef.current;
-      let remaining = targetRemainder - (currentAngle % 360);
-      if (remaining <= 0) remaining += 360;
-
-      // 3 extra rotations + landing, fixed 5s duration.
-      // Free spin is fast (20 deg/frame), decel starts at ~13 deg/frame —
-      // intentional visible brake effect when STOP is pressed.
-      const decelTotal = 3 * 360 + remaining;
-
-      decelFromRef.current = currentAngle;
-      decelTotalRef.current = decelTotal;
-      decelDurationRef.current = DECEL_DURATION;
-      decelStartRef.current = performance.now();
-    } catch (err) {
-      // Network error during spin
-      setScreen('done');
-    }
+      });
   }, [customerId]);
 
   // CLAIM — transition to done (or back to prompt in test mode)
