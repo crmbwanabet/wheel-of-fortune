@@ -2,6 +2,8 @@
   'use strict';
 
   var WIDGET_URL = 'https://wheel-of-fortune-roan.vercel.app';
+  // Allow host page to override widget URL (e.g., for test mode)
+  if (window.BWANABET_WIDGET_URL) WIDGET_URL = window.BWANABET_WIDGET_URL;
   var STORAGE_KEY = 'bwanabet_wheel_spun';
 
   // --- Day calculation (CAT = UTC+2, resets at 06:00 CAT = 04:00 UTC) ---

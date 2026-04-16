@@ -430,18 +430,32 @@ export default function WheelWidget({ prefillUserId = null }) {
       .then(res => res.json())
       .then(data => {
         if (data.error === 'already_spun') {
-          markSpun(); brakingRef.current = false; setScreen('done'); return;
+          markSpun();
+          // Land on a random loss segment — let wheel decelerate naturally
+          const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
+          const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
+          pendingResultRef.current = { winIndex: randomLoss, data: { segmentIndex: randomLoss, won: false, prize: 0 } };
+          winSegmentRef.current = WHEEL_SEGMENTS[randomLoss];
+          return;
         }
         if (data.error) {
-          brakingRef.current = false; setScreen('done'); return;
+          // Land on a random loss segment on error too
+          const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
+          const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
+          pendingResultRef.current = { winIndex: randomLoss, data: { segmentIndex: randomLoss, won: false, prize: 0 } };
+          winSegmentRef.current = WHEEL_SEGMENTS[randomLoss];
+          return;
         }
         markSpun();
         // Store result — animation loop picks it up at next frame boundary
         pendingResultRef.current = { winIndex: data.segmentIndex, data };
       })
       .catch(() => {
-        brakingRef.current = false;
-        setScreen('done');
+        // Land on a random loss segment on network error
+        const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
+        const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
+        pendingResultRef.current = { winIndex: randomLoss, data: { segmentIndex: randomLoss, won: false, prize: 0 } };
+        winSegmentRef.current = WHEEL_SEGMENTS[randomLoss];
       });
   }, [customerId]);
 

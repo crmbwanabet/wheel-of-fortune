@@ -141,7 +141,6 @@
       // Remove old embed elements
       var oldTrigger = document.getElementById('bwanabet-wheel-trigger');
       var oldOverlay = document.getElementById('bwanabet-wheel-overlay');
-      var oldStyle = document.querySelector('style[data-bw]');
       if (oldTrigger) oldTrigger.remove();
       if (oldOverlay) oldOverlay.remove();
 
@@ -149,12 +148,13 @@
       var oldScript = document.getElementById('bw-embed-script');
       if (oldScript) oldScript.remove();
 
+      window.BWANABET_WIDGET_URL = window.location.origin + '?test=1';
       var s = document.createElement('script');
       s.id = 'bw-embed-script';
       s.src = '/embed.js?t=' + Date.now();
       document.body.appendChild(s);
 
-      log('Widget embed reloaded', 'info');
+      log('Widget embed reloaded (test mode)', 'info');
       setTimeout(updateStatus, 500);
     }
 
@@ -183,7 +183,8 @@
     // Initial load
     log('Test page loaded', 'info');
 
-    // Load embed script
+    // Load embed script in test mode (bypasses widget's own localStorage check)
+    window.BWANABET_WIDGET_URL = window.location.origin + '?test=1';
     var s = document.createElement('script');
     s.id = 'bw-embed-script';
     s.src = '/embed.js';
