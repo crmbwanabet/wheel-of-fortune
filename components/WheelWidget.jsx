@@ -284,8 +284,9 @@ export default function WheelWidget({ prefillUserId = null }) {
                   setTimeout(() => setWheelConfetti(false), 3000);
                   setTimeout(() => setShaking(false), 150);
                   const cx = window.innerWidth / 2, cy = window.innerHeight * 0.45;
-                  spawnParticles(cx, cy, 25, { spread: 250, speed: 9, life: 40, gravity: 0.2 });
-                  spawnParticles(cx, cy, 15, { spread: 180, speed: 6, life: 30, gravity: 0.15 });
+                  const isMobile = window.innerWidth < 600;
+                  spawnParticles(cx, cy, isMobile ? 12 : 25, { spread: 250, speed: 9, life: isMobile ? 25 : 40, gravity: 0.2 });
+                  if (!isMobile) spawnParticles(cx, cy, 15, { spread: 180, speed: 6, life: 30, gravity: 0.15 });
                   startLoop();
                   if (segment.prize?.kwacha) spawnFloatingNumber(`+K${segment.prize.kwacha}`, cx, cy - 40, '#fbbf24');
                 }
@@ -319,9 +320,10 @@ export default function WheelWidget({ prefillUserId = null }) {
             if (remaining <= 0) remaining += 360;
 
             const currentSpeed = brakingSpeedRef.current;
-            const extraRotations = currentSpeed > 12 ? 3 : currentSpeed > 6 ? 2 : 1;
+            const extraRotations = currentSpeed > 12 ? 4 : currentSpeed > 6 ? 3 : 2;
             const decelTotal = extraRotations * 360 + remaining;
-            const duration = decelTotal * 50 / currentSpeed;
+            // Speed-matched duration with 5s minimum so wheel always decelerates visibly
+            const duration = Math.max(5000, decelTotal * 50 / currentSpeed);
 
             decelFromRef.current = currentAngle;
             decelTotalRef.current = decelTotal;
@@ -509,7 +511,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       {/* Confetti */}
       {wheelConfetti && (
         <div className="fixed inset-0 pointer-events-none z-[55] overflow-hidden">
-          {Array.from({ length: 60 }, (_, i) => {
+          {Array.from({ length: window.innerWidth < 600 ? 25 : 60 }, (_, i) => {
             const colors = ['#fbbf24','#a855f7','#06b6d4','#ec4899','#22c55e'];
             const shape = ['circle','rect'][i % 2];
             const size = 6 + Math.random() * 10;
@@ -849,7 +851,7 @@ export default function WheelWidget({ prefillUserId = null }) {
 
             {/* === POINTER — JS-driven spring physics === */}
             <div className="absolute z-30" style={{ top: -4, left: '50%', transform: 'translateX(-50%)' }}>
-              <div ref={pointerElRef} style={{ transformOrigin: '20px 12px' }}>
+              <div ref={pointerElRef} style={{ transformOrigin: '20px 12px', willChange: 'transform' }}>
                 <svg width="40" height="48" viewBox="0 0 40 48" style={{ filter: 'drop-shadow(0 3px 8px rgba(0,0,0,0.7))' }}>
                   <defs>
                     <linearGradient id="ptrGold" x1="0%" y1="0%" x2="100%" y2="100%">
