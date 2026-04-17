@@ -83,16 +83,19 @@ export async function POST(request) {
     return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 
-  // Fire-and-forget Telegram notification on real (non-test) wins.
+  // Telegram notification on real (non-test) wins.
+  // Awaited (not fire-and-forget) because Vercel serverless terminates the
+  // function as soon as the response is sent, which would kill an unawaited fetch.
+  // Adds ~200ms on wins only; loss responses are unaffected.
   // Test mode can opt-in with body.notifyTelegram:true to verify the pipe end-to-end.
   const shouldNotify = result.win && (!isTest || body.notifyTelegram === true);
   if (shouldNotify) {
-    sendWinNotification({
+    await sendWinNotification({
       customerId: cleanId,
       prizeAmount: result.prize_amount,
       winsToday: result.wins_today,
       budgetSpent: result.budget_today,
-    }).catch(() => {});
+    }).catch(err => console.error('[spin] Telegram notify failed:', err?.message));
   }
 
   return NextResponse.json({
