@@ -5,57 +5,11 @@ import {
   getWheelDayDate,
   pickAlgorithm,
   buildWinningMap,
-  prizeToSegmentIndex,
-  pickLossSegment,
 } from '@/lib/algorithms';
 import { sendWinNotification } from '@/lib/telegram';
 
-async function getOrCreateDailyState(dayDate) {
-  const supabase = getSupabase();
-  const { data: existing } = await supabase
-    .from('wheel_daily_state')
-    .select('*')
-    .eq('day_date', dayDate)
-    .single();
-
-  if (existing) return existing;
-
-  const algorithmId = pickAlgorithm();
-  const winningPositions = buildWinningMap(algorithmId);
-
-  const { data: created, error } = await supabase
-    .from('wheel_daily_state')
-    .upsert(
-      {
-        day_date: dayDate,
-        algorithm_id: algorithmId,
-        winning_positions: winningPositions,
-        total_spins: 0,
-        total_wins: 0,
-        total_budget_spent: 0,
-      },
-      { onConflict: 'day_date', ignoreDuplicates: true }
-    )
-    .select()
-    .single();
-
-  if (error || !created) {
-    const { data: fetched } = await supabase
-      .from('wheel_daily_state')
-      .select('*')
-      .eq('day_date', dayDate)
-      .single();
-    return fetched;
-  }
-
-  return created;
-}
-
 export async function POST(request) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
-  }
 
   let body;
   try {
@@ -64,144 +18,84 @@ export async function POST(request) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }
 
-  const { customerId, fingerprint, test, forceWin } = body;
-  const isTestMode = test === true;
+  // Test-mode is gated by header secret. Missing/wrong token → body flags ignored.
+  const providedToken = request.headers.get('x-wheel-test-token');
+  const serverToken = process.env.WHEEL_TEST_TOKEN;
+  const isTest = Boolean(serverToken && providedToken && providedToken === serverToken && body.test === true);
+
+  // Authenticated test traffic bypasses the public rate limiter.
+  if (!isTest && !checkRateLimit(ip)) {
+    return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
+  }
+
+  const { customerId, fingerprint } = body;
 
   if (!customerId || typeof customerId !== 'string' || customerId.trim() === '') {
     return NextResponse.json({ error: 'missing_customer_id' }, { status: 400 });
   }
+  const forceWin = isTest && typeof body.forceWin === 'number' ? body.forceWin : null;
+  const bucket = isTest
+    ? (typeof body.testBucket === 'string' && body.testBucket.length > 0 ? body.testBucket : 'stress')
+    : '';
+  // In test mode, default to skipping dedupe (load tests use unique IDs). Tests
+  // that want to verify dedupe itself send body.skipDedupe:false to force it on.
+  const skipDedupe = isTest && body.skipDedupe !== false;
 
   const cleanId = customerId.trim();
   const dayDate = getWheelDayDate();
+  const algorithmId = pickAlgorithm();
+  const winningPositions = buildWinningMap(algorithmId);
+
   const supabase = getSupabase();
 
-  // Skip duplicate checks in test mode
-  if (!isTestMode) {
-    // Check: has this customer already spun today?
-    const { data: existingSpin } = await supabase
-      .from('wheel_spin_log')
-      .select('id')
-      .eq('day_date', dayDate)
-      .eq('customer_id', cleanId)
-      .limit(1)
-      .single();
-
-    if (existingSpin) {
-      return NextResponse.json({ error: 'already_spun' });
-    }
-
-    // Check: has this fingerprint already spun today?
-    if (fingerprint) {
-      const { data: fpSpin } = await supabase
-        .from('wheel_spin_log')
-        .select('id')
-        .eq('day_date', dayDate)
-        .eq('fingerprint', fingerprint)
-        .limit(1)
-        .single();
-
-      if (fpSpin) {
-        return NextResponse.json({ error: 'already_spun' });
-      }
-    }
-  }
-
-  // Get or create today's state
-  const dailyState = await getOrCreateDailyState(dayDate);
-  if (!dailyState) {
+  // Idempotent day init
+  const { error: ensureErr } = await supabase.rpc('ensure_daily_state', {
+    p_day: dayDate,
+    p_bucket: bucket,
+    p_algorithm_id: algorithmId,
+    p_winning_positions: winningPositions,
+  });
+  if (ensureErr) {
+    console.error('[spin] ensure_daily_state failed:', ensureErr);
     return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 
-  // Atomically increment total_spins and get the new spin number
-  const { data: updated, error: updateErr } = await supabase
-    .from('wheel_daily_state')
-    .update({ total_spins: dailyState.total_spins + 1 })
-    .eq('id', dailyState.id)
-    .eq('total_spins', dailyState.total_spins)
-    .select('total_spins')
-    .single();
-
-  if (updateErr || !updated) {
-    const { data: retryState } = await supabase
-      .from('wheel_daily_state')
-      .select('*')
-      .eq('day_date', dayDate)
-      .single();
-
-    if (!retryState) {
-      return NextResponse.json({ error: 'server_error' }, { status: 500 });
-    }
-
-    const { data: retryUpdated, error: retryErr } = await supabase
-      .from('wheel_daily_state')
-      .update({ total_spins: retryState.total_spins + 1 })
-      .eq('id', retryState.id)
-      .eq('total_spins', retryState.total_spins)
-      .select('total_spins')
-      .single();
-
-    if (retryErr || !retryUpdated) {
-      return NextResponse.json({ error: 'server_busy' }, { status: 503 });
-    }
-
-    Object.assign(dailyState, retryState);
-    dailyState.total_spins = retryUpdated.total_spins;
-  } else {
-    dailyState.total_spins = updated.total_spins;
+  // Atomic claim
+  const { data: result, error: claimErr } = await supabase.rpc('claim_spin', {
+    p_day: dayDate,
+    p_bucket: bucket,
+    p_customer: cleanId,
+    p_fingerprint: fingerprint || null,
+    p_ip: ip,
+    p_skip_dedupe: skipDedupe,
+    p_force_prize: forceWin,
+  });
+  if (claimErr || !result) {
+    console.error('[spin] claim_spin failed:', claimErr);
+    return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 
-  const spinNumber = dailyState.total_spins;
-  const winningPositions = dailyState.winning_positions;
-
-  let prizeAmount = winningPositions[String(spinNumber)];
-  let isWin = prizeAmount !== undefined;
-
-  // Test mode: force a win with a specific prize amount
-  if (isTestMode && forceWin) {
-    const forceAmount = typeof forceWin === 'number' ? forceWin : 200;
-    prizeAmount = forceAmount;
-    isWin = true;
+  if (result.error === 'already_spun') {
+    return NextResponse.json({ error: 'already_spun' });
+  }
+  if (result.error) {
+    console.error('[spin] RPC returned error:', result.error);
+    return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 
-  let segmentIndex;
-  let finalPrize = 0;
-
-  if (isWin) {
-    segmentIndex = prizeToSegmentIndex(prizeAmount);
-    finalPrize = prizeAmount;
-
-    await supabase
-      .from('wheel_daily_state')
-      .update({
-        total_wins: dailyState.total_wins + 1,
-        total_budget_spent: dailyState.total_budget_spent + prizeAmount,
-      })
-      .eq('id', dailyState.id);
-
+  // Fire-and-forget Telegram notification on real (non-test) wins
+  if (result.win && !isTest) {
     sendWinNotification({
       customerId: cleanId,
-      prizeAmount,
-      winsToday: dailyState.total_wins + 1,
-      budgetSpent: dailyState.total_budget_spent + prizeAmount,
+      prizeAmount: result.prize_amount,
+      winsToday: result.wins_today,
+      budgetSpent: result.budget_today,
     }).catch(() => {});
-  } else {
-    segmentIndex = pickLossSegment();
   }
 
-  await supabase.from('wheel_spin_log').insert({
-    day_date: dayDate,
-    customer_id: cleanId,
-    spin_number: spinNumber,
-    won: isWin,
-    prize_amount: finalPrize,
-    segment_index: segmentIndex,
-    fingerprint: fingerprint || null,
-    ip_address: ip,
-  });
-
   return NextResponse.json({
-    win: isWin,
-    segmentIndex,
-    prize: isWin ? { kwacha: prizeAmount } : null,
+    win: result.win,
+    segmentIndex: result.segment_index,
+    prize: result.win ? { kwacha: result.prize_amount } : null,
   });
 }
