@@ -87,9 +87,7 @@ export async function POST(request) {
   // Awaited (not fire-and-forget) because Vercel serverless terminates the
   // function as soon as the response is sent, which would kill an unawaited fetch.
   // Adds ~200ms on wins only; loss responses are unaffected.
-  // Test mode can opt-in with body.notifyTelegram:true to verify the pipe end-to-end.
-  const shouldNotify = result.win && (!isTest || body.notifyTelegram === true);
-  if (shouldNotify) {
+  if (result.win && !isTest) {
     await sendWinNotification({
       customerId: cleanId,
       prizeAmount: result.prize_amount,
