@@ -731,7 +731,7 @@ export default function WheelWidget({ prefillUserId = null }) {
         ...(shaking ? { animation: 'winShake 0.15s ease-out' } : {}),
       }}>
 
-        {/* Marquee light dots around card border — reduced count on low-end devices */}
+        {/* Marquee light dots around card border — paused during spin, reduced on low-end */}
         <div className="absolute inset-0 pointer-events-none z-30 rounded-2xl overflow-hidden">
           {Array.from({ length: isLowEnd ? 12 : 28 }, (_, i) => {
             const n = isLowEnd ? 12 : 28;
@@ -740,6 +740,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                 width: 4, height: 4, top: 3, left: `${(i + 1) * (100 / (n + 1))}%`,
                 background: '#fbbf24', boxShadow: isLowEnd ? '0 0 3px #fbbf24' : '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
                 animation: `marqueeLight 1.5s ${i * 0.08}s ease-in-out infinite`,
+                animationPlayState: isSpinning ? 'paused' : 'running',
               }} />
             );
           })}
@@ -750,6 +751,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                 width: 4, height: 4, bottom: 3, left: `${(i + 1) * (100 / (n + 1))}%`,
                 background: '#fbbf24', boxShadow: isLowEnd ? '0 0 3px #fbbf24' : '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
                 animation: `marqueeLight 1.5s ${(i + n / 2) * 0.08}s ease-in-out infinite`,
+                animationPlayState: isSpinning ? 'paused' : 'running',
               }} />
             );
           })}
@@ -760,6 +762,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                 width: 4, height: 4, left: 3, top: `${(i + 1) * (100 / (n + 1))}%`,
                 background: '#fbbf24', boxShadow: isLowEnd ? '0 0 3px #fbbf24' : '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
                 animation: `marqueeLight 1.5s ${(i + n) * 0.08}s ease-in-out infinite`,
+                animationPlayState: isSpinning ? 'paused' : 'running',
               }} />
             );
           })}
@@ -770,6 +773,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                 width: 4, height: 4, right: 3, top: `${(i + 1) * (100 / (n + 1))}%`,
                 background: '#fbbf24', boxShadow: isLowEnd ? '0 0 3px #fbbf24' : '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
                 animation: `marqueeLight 1.5s ${(i + n * 2.5) * 0.08}s ease-in-out infinite`,
+                animationPlayState: isSpinning ? 'paused' : 'running',
               }} />
             );
           })}
@@ -863,10 +867,10 @@ export default function WheelWidget({ prefillUserId = null }) {
                 </filter>
               </defs>
 
-              {/* Thick outer chrome ring */}
-              <circle cx="200" cy="200" r="194" fill="none" stroke="url(#chrome1)" strokeWidth="12" filter="url(#chromeGlow)" />
+              {/* Thick outer chrome ring — blur filter skipped on low-end (expensive) */}
+              <circle cx="200" cy="200" r="194" fill="none" stroke="url(#chrome1)" strokeWidth="12" filter={isLowEnd ? undefined : 'url(#chromeGlow)'} />
               {/* Specular highlight arc — bright white sweep across upper-left chrome */}
-              <path d="M 80 120 A 190 190 0 0 1 280 70" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" opacity="0.35" filter="url(#chromeGlow)" />
+              <path d="M 80 120 A 190 190 0 0 1 280 70" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" opacity="0.35" filter={isLowEnd ? undefined : 'url(#chromeGlow)'} />
               <path d="M 90 125 A 185 185 0 0 1 270 78" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" opacity="0.2" />
               {/* Dark channel for lights */}
               <circle cx="200" cy="200" r="184" fill="none" stroke="#12151f" strokeWidth="10" />
@@ -877,8 +881,8 @@ export default function WheelWidget({ prefillUserId = null }) {
               {/* Dark inner edge */}
               <circle cx="200" cy="200" r="171" fill="none" stroke="#1a1e2e" strokeWidth="2" />
 
-              {/* === CHASING LIGHTS === */}
-              {Array.from({ length: 36 }, (_, i) => {
+              {/* === CHASING LIGHTS === hidden during spin (GPU-heavy) and on low-end devices */}
+              {!isSpinning && !isLowEnd && Array.from({ length: 36 }, (_, i) => {
                 const deg = i * 10 - 90;
                 const lR = 184;
                 const lx = 200 + lR * Math.cos(deg * Math.PI / 180);
@@ -892,8 +896,19 @@ export default function WheelWidget({ prefillUserId = null }) {
                   </circle>
                 );
               })}
+              {/* Low-end fallback: static dim lights, no animation, no filter */}
+              {isLowEnd && Array.from({ length: 18 }, (_, i) => {
+                const deg = i * 20 - 90;
+                const lR = 184;
+                const lx = 200 + lR * Math.cos(deg * Math.PI / 180);
+                const ly = 200 + lR * Math.sin(deg * Math.PI / 180);
+                const colors = ['#fbbf24','#ec4899','#a855f7','#22c55e','#3b82f6','#f97316'];
+                return (
+                  <circle key={`ol-${i}`} cx={lx} cy={ly} r="3.5" fill={colors[i % colors.length]} opacity="0.7" />
+                );
+              })}
 
-              {/* Gold pegs at segment dividers */}
+              {/* Gold pegs at segment dividers — SMIL pulse skipped on low-end */}
               {WHEEL_SEGMENTS.map((_, i) => {
                 const a = i * SEG_ANGLE - 90;
                 const px = 200 + 175 * Math.cos(a * Math.PI / 180);
@@ -902,7 +917,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                   <g key={`peg${i}`}>
                     <circle cx={px} cy={py} r="5" fill="#1a1e2e" stroke="#b8860b" strokeWidth="1.2" />
                     <circle cx={px} cy={py} r="3" fill="#fbbf24">
-                      {isSpinning && <animate attributeName="opacity" values="1;0.3;1" dur={`${0.3 + (i % 3) * 0.12}s`} repeatCount="indefinite" />}
+                      {isSpinning && !isLowEnd && <animate attributeName="opacity" values="1;0.3;1" dur={`${0.3 + (i % 3) * 0.12}s`} repeatCount="indefinite" />}
                     </circle>
                   </g>
                 );
