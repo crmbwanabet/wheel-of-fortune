@@ -1120,23 +1120,6 @@ export default function WheelWidget({ prefillUserId = null }) {
             </div>
           </div>
 
-          {/* ============ BOTTOM ROW ============ */}
-          <div className="flex items-center justify-center mt-2">
-            {screen === 'spinning' && (
-              <div className="flex items-center justify-center gap-2 text-gray-400 py-1">
-                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-                <span className="font-bold text-sm tracking-wide">Tap STOP to win!</span>
-                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-              </div>
-            )}
-            {screen === 'stopping' && showSlowingText && (
-              <div className="flex items-center justify-center gap-2 text-gray-400 py-1" style={{ animation: 'fadeIn 0.5s ease-out' }}>
-                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-                <span className="font-bold text-sm tracking-wide">Slowing down...</span>
-                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
