@@ -160,12 +160,22 @@ export default function WheelWidget({ prefillUserId = null }) {
   const pointerElRef = useRef(null);
   const prevWheelAngleRef = useRef(0);
 
-  const SPIN_SPEED = 20;       // fast free spin
-  const BRAKE_FRICTION = 0.98; // per-frame friction when braking (before API responds)
+  const SPIN_SPEED = 20;       // per 60fps-frame → scaled by k below so apparent speed is constant across devices
+  const BRAKE_FRICTION = 0.98; // per 60fps-frame
+  const FRAME_MS = 1000 / 60;  // reference frame duration
 
-  // Spring-damper parameters (per-frame units)
+  // Spring-damper parameters (per 60fps-frame units)
   const SPRING_STIFFNESS = 0.3;
   const SPRING_DAMPING = 0.15;
+
+  // Low-end device heuristic — reduces decorative animations for weak phones.
+  // Uses hardwareConcurrency + deviceMemory when available. Set once on mount.
+  const [isLowEnd] = useState(() => {
+    if (typeof navigator === 'undefined') return false;
+    const cores = navigator.hardwareConcurrency || 8;
+    const mem = navigator.deviceMemory || 8;
+    return cores <= 4 || mem <= 3;
+  });
 
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
@@ -233,9 +243,16 @@ export default function WheelWidget({ prefillUserId = null }) {
       pointerVelRef.current = 0;
       setShowSlowingText(false);
       let cancelled = false;
+      let lastTs = null;
 
       const loop = (timestamp) => {
         if (cancelled) return;
+
+        // k = elapsed frames at 60fps since last tick. On 60fps phones k≈1 (legacy behavior).
+        // On 30fps phones k≈2; on 20fps k≈3 — so per-second angular velocity stays constant.
+        // Capped at 5 to avoid huge jumps after tab backgrounding.
+        const k = lastTs === null ? 1 : Math.min(5, (timestamp - lastTs) / FRAME_MS);
+        lastTs = timestamp;
 
         let currentAngle = spinAngleRef.current;
 
@@ -305,8 +322,8 @@ export default function WheelWidget({ prefillUserId = null }) {
 
         // PHASE 2: FRICTION BRAKE — STOP pressed, waiting for API response
         } else if (brakingRef.current) {
-          brakingSpeedRef.current *= BRAKE_FRICTION;
-          spinAngleRef.current += brakingSpeedRef.current;
+          brakingSpeedRef.current *= Math.pow(BRAKE_FRICTION, k);
+          spinAngleRef.current += brakingSpeedRef.current * k;
           currentAngle = spinAngleRef.current;
           if (wheelRef.current) {
             wheelRef.current.style.transform = `rotate(${currentAngle}deg)`;
@@ -338,9 +355,9 @@ export default function WheelWidget({ prefillUserId = null }) {
             brakingRef.current = false;
           }
 
-        // PHASE 1: FREE SPIN — constant speed
+        // PHASE 1: FREE SPIN — constant angular velocity (time-based)
         } else {
-          spinAngleRef.current += SPIN_SPEED;
+          spinAngleRef.current += SPIN_SPEED * k;
           currentAngle = spinAngleRef.current;
           if (wheelRef.current) {
             wheelRef.current.style.transform = `rotate(${currentAngle}deg)`;
@@ -351,7 +368,8 @@ export default function WheelWidget({ prefillUserId = null }) {
         const normalizedAngle = ((currentAngle % 360) + 360) % 360;
         const pegIndex = Math.floor(normalizedAngle / SEG_ANGLE);
         if (lastPegIndexRef.current >= 0 && pegIndex !== lastPegIndexRef.current) {
-          const wheelSpeed = Math.abs(currentAngle - prevWheelAngleRef.current);
+          // Normalize wheel-speed estimate to per-60fps-frame units so impulse thresholds stay right on any device.
+          const wheelSpeed = Math.abs(currentAngle - prevWheelAngleRef.current) / Math.max(k, 0.01);
           let impulse;
           if (wheelSpeed >= 15) impulse = 2;       // full speed: tiny rapid flicks
           else if (wheelSpeed >= 5) impulse = 5;    // medium: visible bounces
@@ -361,9 +379,12 @@ export default function WheelWidget({ prefillUserId = null }) {
         lastPegIndexRef.current = pegIndex;
         prevWheelAngleRef.current = currentAngle;
 
-        // Spring-damper update
-        pointerVelRef.current += (-SPRING_STIFFNESS * pointerAngleRef.current - SPRING_DAMPING * pointerVelRef.current);
-        pointerAngleRef.current += pointerVelRef.current;
+        // Spring-damper update — sub-step for large dt so spring stays stable on slow phones
+        const springSteps = Math.max(1, Math.min(6, Math.round(k)));
+        for (let s = 0; s < springSteps; s++) {
+          pointerVelRef.current += (-SPRING_STIFFNESS * pointerAngleRef.current - SPRING_DAMPING * pointerVelRef.current);
+          pointerAngleRef.current += pointerVelRef.current;
+        }
         pointerAngleRef.current = Math.max(-20, Math.min(20, pointerAngleRef.current));
         if (pointerElRef.current) {
           pointerElRef.current.style.transform = `rotate(${pointerAngleRef.current}deg)`;
@@ -710,36 +731,48 @@ export default function WheelWidget({ prefillUserId = null }) {
         ...(shaking ? { animation: 'winShake 0.15s ease-out' } : {}),
       }}>
 
-        {/* Marquee light dots around card border */}
+        {/* Marquee light dots around card border — reduced count on low-end devices */}
         <div className="absolute inset-0 pointer-events-none z-30 rounded-2xl overflow-hidden">
-          {Array.from({ length: 28 }, (_, i) => (
-            <div key={`mt${i}`} className="absolute rounded-full" style={{
-              width: 4, height: 4, top: 3, left: `${(i + 1) * (100 / 29)}%`,
-              background: '#fbbf24', boxShadow: '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
-              animation: `marqueeLight 1.5s ${i * 0.05}s ease-in-out infinite`,
-            }} />
-          ))}
-          {Array.from({ length: 28 }, (_, i) => (
-            <div key={`mb${i}`} className="absolute rounded-full" style={{
-              width: 4, height: 4, bottom: 3, left: `${(i + 1) * (100 / 29)}%`,
-              background: '#fbbf24', boxShadow: '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
-              animation: `marqueeLight 1.5s ${(i + 14) * 0.05}s ease-in-out infinite`,
-            }} />
-          ))}
-          {Array.from({ length: 18 }, (_, i) => (
-            <div key={`ml${i}`} className="absolute rounded-full" style={{
-              width: 4, height: 4, left: 3, top: `${(i + 1) * (100 / 19)}%`,
-              background: '#fbbf24', boxShadow: '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
-              animation: `marqueeLight 1.5s ${(i + 28) * 0.05}s ease-in-out infinite`,
-            }} />
-          ))}
-          {Array.from({ length: 18 }, (_, i) => (
-            <div key={`mr${i}`} className="absolute rounded-full" style={{
-              width: 4, height: 4, right: 3, top: `${(i + 1) * (100 / 19)}%`,
-              background: '#fbbf24', boxShadow: '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
-              animation: `marqueeLight 1.5s ${(i + 46) * 0.05}s ease-in-out infinite`,
-            }} />
-          ))}
+          {Array.from({ length: isLowEnd ? 12 : 28 }, (_, i) => {
+            const n = isLowEnd ? 12 : 28;
+            return (
+              <div key={`mt${i}`} className="absolute rounded-full" style={{
+                width: 4, height: 4, top: 3, left: `${(i + 1) * (100 / (n + 1))}%`,
+                background: '#fbbf24', boxShadow: isLowEnd ? '0 0 3px #fbbf24' : '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
+                animation: `marqueeLight 1.5s ${i * 0.08}s ease-in-out infinite`,
+              }} />
+            );
+          })}
+          {Array.from({ length: isLowEnd ? 12 : 28 }, (_, i) => {
+            const n = isLowEnd ? 12 : 28;
+            return (
+              <div key={`mb${i}`} className="absolute rounded-full" style={{
+                width: 4, height: 4, bottom: 3, left: `${(i + 1) * (100 / (n + 1))}%`,
+                background: '#fbbf24', boxShadow: isLowEnd ? '0 0 3px #fbbf24' : '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
+                animation: `marqueeLight 1.5s ${(i + n / 2) * 0.08}s ease-in-out infinite`,
+              }} />
+            );
+          })}
+          {Array.from({ length: isLowEnd ? 8 : 18 }, (_, i) => {
+            const n = isLowEnd ? 8 : 18;
+            return (
+              <div key={`ml${i}`} className="absolute rounded-full" style={{
+                width: 4, height: 4, left: 3, top: `${(i + 1) * (100 / (n + 1))}%`,
+                background: '#fbbf24', boxShadow: isLowEnd ? '0 0 3px #fbbf24' : '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
+                animation: `marqueeLight 1.5s ${(i + n) * 0.08}s ease-in-out infinite`,
+              }} />
+            );
+          })}
+          {Array.from({ length: isLowEnd ? 8 : 18 }, (_, i) => {
+            const n = isLowEnd ? 8 : 18;
+            return (
+              <div key={`mr${i}`} className="absolute rounded-full" style={{
+                width: 4, height: 4, right: 3, top: `${(i + 1) * (100 / (n + 1))}%`,
+                background: '#fbbf24', boxShadow: isLowEnd ? '0 0 3px #fbbf24' : '0 0 4px #fbbf24, 0 0 8px #fbbf2480',
+                animation: `marqueeLight 1.5s ${(i + n * 2.5) * 0.08}s ease-in-out infinite`,
+              }} />
+            );
+          })}
         </div>
 
         {/* Close button */}
@@ -783,11 +816,15 @@ export default function WheelWidget({ prefillUserId = null }) {
               background: 'radial-gradient(circle at 50% 48%, rgba(200,210,230,0.15) 0%, rgba(150,160,180,0.07) 30%, transparent 60%)',
             }} />
 
-            {/* Sparkle accents */}
-            <div className="absolute pointer-events-none text-white/40" style={{ top: '5%', left: '2%', fontSize: 18, animation: 'sparkle 2.5s 0.3s ease-in-out infinite' }}>&#10022;</div>
-            <div className="absolute pointer-events-none text-white/30" style={{ top: '12%', right: '4%', fontSize: 14, animation: 'sparkle 2.5s 1s ease-in-out infinite' }}>&#10022;</div>
-            <div className="absolute pointer-events-none text-white/25" style={{ bottom: '10%', left: '4%', fontSize: 12, animation: 'sparkle 2.5s 1.6s ease-in-out infinite' }}>&#10022;</div>
-            <div className="absolute pointer-events-none text-white/35" style={{ bottom: '5%', right: '2%', fontSize: 16, animation: 'sparkle 2.5s 0.7s ease-in-out infinite' }}>&#10022;</div>
+            {/* Sparkle accents — skipped on low-end devices */}
+            {!isLowEnd && (
+              <>
+                <div className="absolute pointer-events-none text-white/40" style={{ top: '5%', left: '2%', fontSize: 18, animation: 'sparkle 2.5s 0.3s ease-in-out infinite' }}>&#10022;</div>
+                <div className="absolute pointer-events-none text-white/30" style={{ top: '12%', right: '4%', fontSize: 14, animation: 'sparkle 2.5s 1s ease-in-out infinite' }}>&#10022;</div>
+                <div className="absolute pointer-events-none text-white/25" style={{ bottom: '10%', left: '4%', fontSize: 12, animation: 'sparkle 2.5s 1.6s ease-in-out infinite' }}>&#10022;</div>
+                <div className="absolute pointer-events-none text-white/35" style={{ bottom: '5%', right: '2%', fontSize: 16, animation: 'sparkle 2.5s 0.7s ease-in-out infinite' }}>&#10022;</div>
+              </>
+            )}
 
             {/* Drop shadow under wheel */}
             <div className="absolute pointer-events-none rounded-full" style={{
@@ -898,7 +935,8 @@ export default function WheelWidget({ prefillUserId = null }) {
               className="absolute rounded-full overflow-hidden"
               style={{
                 top: '7%', left: '7%', right: '7%', bottom: '7%',
-                willChange: isSpinning ? 'transform' : 'auto',
+                willChange: 'transform',  // always on → stays on its own GPU compositor layer
+                backfaceVisibility: 'hidden',
               }}
             >
               <svg viewBox="0 0 300 300" className="w-full h-full">
