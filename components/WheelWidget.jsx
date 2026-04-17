@@ -753,25 +753,25 @@ export default function WheelWidget({ prefillUserId = null }) {
         <div className="relative z-10 px-4 sm:px-5 pt-4 pb-4">
 
           {/* Header */}
-          <div className="flex items-start justify-between mb-2">
-            <div>
-              <div className="mb-1">
-                <span className="text-xs font-black tracking-[0.3em] text-white">BWANABET</span>
-              </div>
-              <h1 className="text-4xl sm:text-[42px] font-black tracking-tight leading-[0.85]" style={{
+          <div className="text-center mb-2">
+            <h1 className="text-4xl sm:text-[42px] font-black tracking-tight leading-[0.9]" style={{
+              background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
+            }}>BWANABET</h1>
+            <h1 className="text-4xl sm:text-[42px] font-black tracking-tight leading-[0.9] mt-1">
+              <span style={{
                 background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                 filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-              }}>SPIN</h1>
-              <div className="-mt-0.5 mb-0.5">
-                <span className="text-[9px] font-bold tracking-[0.35em] text-white">A N D</span>
-              </div>
-              <h1 className="text-4xl sm:text-[42px] font-black tracking-tight leading-[0.85]" style={{
+              }}>SPIN</span>{' '}
+              <span className="text-white" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))' }}>AND</span>{' '}
+              <span style={{
                 background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                 filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-              }}>WIN</h1>
-            </div>
+              }}>WIN</span>
+            </h1>
           </div>
 
           {/* ============ WHEEL AREA ============ */}
