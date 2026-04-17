@@ -4,7 +4,7 @@ import { checkRateLimit } from '@/lib/rateLimit';
 
 export async function POST(request) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  if (!checkRateLimit(ip)) {
+  if (!(await checkRateLimit('validate', ip))) {
     return NextResponse.json({ valid: false, error: 'Too many requests' }, { status: 429 });
   }
 

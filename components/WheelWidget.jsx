@@ -586,12 +586,25 @@ export default function WheelWidget({ prefillUserId = null }) {
               <X className="w-5 h-5 text-white" strokeWidth={3} />
             </button>
 
-            <h1 className="text-3xl font-black mb-1" style={{
+            <h1 className="text-3xl font-black tracking-tight leading-[0.9]" style={{
               background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}>SPIN & WIN</h1>
-            <p className="text-white text-sm mb-5">Enter your BwanaBet ID to play</p>
+            }}>BWANABET</h1>
+            <h1 className="text-3xl font-black tracking-tight leading-[0.9] mt-1 mb-1">
+              <span style={{
+                background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
+              }}>SPIN</span>{' '}
+              <span className="text-white text-2xl" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))' }}>AND</span>{' '}
+              <span style={{
+                background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
+              }}>WIN</span>
+            </h1>
+            <p className="text-white text-sm mt-2 mb-5">Enter your BwanaBet ID to play</p>
 
             <input
               type="text"

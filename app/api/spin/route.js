@@ -24,7 +24,7 @@ export async function POST(request) {
   const isTest = Boolean(serverToken && providedToken && providedToken === serverToken && body.test === true);
 
   // Authenticated test traffic bypasses the public rate limiter.
-  if (!isTest && !checkRateLimit(ip)) {
+  if (!isTest && !(await checkRateLimit('spin', ip))) {
     return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
   }
 
