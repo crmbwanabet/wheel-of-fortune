@@ -754,18 +754,18 @@ export default function WheelWidget({ prefillUserId = null }) {
 
           {/* Header */}
           <div className="text-center mb-2">
-            <h1 className="text-4xl sm:text-[42px] font-black tracking-tight leading-[0.9]" style={{
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-[0.9]" style={{
               background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
             }}>BWANABET</h1>
-            <h1 className="text-4xl sm:text-[42px] font-black tracking-tight leading-[0.9] mt-1">
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-[0.9] mt-1">
               <span style={{
                 background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                 filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
               }}>SPIN</span>{' '}
-              <span className="text-white" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))' }}>AND</span>{' '}
+              <span className="text-white text-2xl sm:text-3xl" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))' }}>AND</span>{' '}
               <span style={{
                 background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
