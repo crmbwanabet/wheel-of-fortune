@@ -83,8 +83,10 @@ export async function POST(request) {
     return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 
-  // Fire-and-forget Telegram notification on real (non-test) wins
-  if (result.win && !isTest) {
+  // Fire-and-forget Telegram notification on real (non-test) wins.
+  // Test mode can opt-in with body.notifyTelegram:true to verify the pipe end-to-end.
+  const shouldNotify = result.win && (!isTest || body.notifyTelegram === true);
+  if (shouldNotify) {
     sendWinNotification({
       customerId: cleanId,
       prizeAmount: result.prize_amount,
