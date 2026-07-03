@@ -222,19 +222,54 @@ export default function WheelWidget({ prefillUserId = null }) {
 
   // On mount: generate fingerprint, then resolve the entry screen.
   // Test mode goes straight to the prompt. Real mode waits for the parent
-  // (embed.js) to postMessage the BwanaBet session token.
+  // (embed.js) to postMessage the BwanaBet session token, then asks the server
+  // whether today's spin is still available and reports the answer back to the
+  // parent so embed.js only shows the trigger button for an available spin.
   useEffect(() => {
-    generateFingerprint().then(fp => { fingerprintRef.current = fp; }).catch(() => {});
+    const fpPromise = generateFingerprint()
+      .then(fp => { fingerprintRef.current = fp; return fp; })
+      .catch(() => null);
 
     if (isTestMode) {
       setScreen('prompt');
+      window.parent.postMessage({ type: 'bwanabet-wheel-available', available: true }, '*');
       return;
     }
+
+    let checked = false;
+    const resolveAvailability = async (token) => {
+      if (checked) return;
+      checked = true;
+
+      let available = !hasSpunToday();
+      if (available) {
+        try {
+          const fp = await fpPromise;
+          const res = await fetch('/api/spin-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, fingerprint: fp }),
+          });
+          const data = await res.json();
+          available = data.available !== false;
+        } catch {
+          // Fail open — /api/spin still enforces the daily claim atomically.
+        }
+      }
+
+      if (available) {
+        setScreen('prompt');
+      } else {
+        markSpun(); // sync localStorage so future page loads skip the check
+        setScreen('done');
+      }
+      window.parent.postMessage({ type: 'bwanabet-wheel-available', available }, '*');
+    };
 
     const onMessage = (e) => {
       if (e.data?.type === 'bwanabet-auth' && typeof e.data.token === 'string' && e.data.token) {
         authTokenRef.current = e.data.token;
-        setScreen(hasSpunToday() ? 'done' : 'prompt');
+        resolveAvailability(e.data.token);
       }
     };
     window.addEventListener('message', onMessage);
@@ -481,18 +516,18 @@ export default function WheelWidget({ prefillUserId = null }) {
       });
   }, [isTestMode, forceWinParam, testCustomerId]);
 
-  // CLAIM — transition to done (or back to prompt in test mode)
+  // CLAIM — acknowledge the result and close the widget (the near-identical
+  // 'done' card only shows if the user re-opens it). Test mode loops to prompt.
   const claimPrize = useCallback(() => {
     if (!spinResult) return;
-    const wasWin = !spinResult.isLoss;
     setSpinResult(null);
-    setScreen(isTestMode ? 'prompt' : 'done');
-    if (wasWin) {
-      const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
-      spawnParticles(cx, cy, 20, { spread: 300, speed: 10, life: 35, gravity: 0.22 });
-      startLoop();
+    if (isTestMode) {
+      setScreen('prompt');
+      return;
     }
-  }, [spinResult, spawnParticles, startLoop]);
+    setScreen('done');
+    window.parent.postMessage({ type: 'bwanabet-wheel-close' }, '*');
+  }, [spinResult, isTestMode]);
 
   const handleClose = useCallback(() => {
     setClosed(true);

@@ -130,10 +130,12 @@
     '<polygon points="51,25 61,17 61,24 51,32" fill="none" stroke="#92400e" stroke-width="0.5" opacity="0.3"/>' +
     '</svg>';
 
+  // Starts hidden — shown only when the widget confirms a spin is available
+  // for this customer today (server-checked, cross-device).
   btn.style.cssText = 'position:fixed;right:16px;top:50%;transform:translateY(-50%);z-index:9998;' +
     'cursor:pointer;width:64px;height:64px;border-radius:50%;' +
     'background:rgba(250,204,21,0.15);backdrop-filter:blur(4px);' +
-    'display:flex;align-items:center;justify-content:center;' +
+    'display:none;align-items:center;justify-content:center;' +
     'box-shadow:0 4px 20px rgba(250,204,21,0.4),0 0 0 0 rgba(250,204,21,0.6);' +
     'transition:transform 0.2s ease;';
 
@@ -194,6 +196,15 @@
 
     if (e.data.type === 'bwanabet-wheel-ready') {
       sendAuth();
+    }
+
+    if (e.data.type === 'bwanabet-wheel-available') {
+      if (e.data.available) {
+        btn.style.display = 'flex';
+      } else {
+        markSpun(); // remember server verdict so future page loads skip the iframe
+        hideButton();
+      }
     }
 
     if (e.data.type === 'bwanabet-wheel-close') {
