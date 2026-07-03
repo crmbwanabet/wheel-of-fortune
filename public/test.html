@@ -67,6 +67,10 @@
         <button class="btn btn-blue" onclick="setForceWin(50)" style="background:#9333ea;">Force Win K50</button>
         <button class="btn btn-blue" onclick="setForceWin(0)" style="background:#6b7280;">Normal Mode</button>
       </div>
+      <div class="controls">
+        <button class="btn btn-blue" onclick="simulateLogin()" style="background:#0ea5e9;">Simulate Login</button>
+        <button class="btn btn-gray" onclick="simulateLogout()">Log Out</button>
+      </div>
       <div style="margin-top: 12px;">
         <span>Trigger button: </span>
         <span id="trigger-status" class="status status-active"><span class="dot dot-green"></span> Visible</span>
@@ -197,10 +201,33 @@
       reloadEmbed();
     }
 
+    function makeFakeToken() {
+      var b64url = function (obj) {
+        return btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      };
+      var exp = Math.floor(Date.now() / 1000) + 3600;
+      var header = b64url({ alg: 'HS256', typ: 'JWT' });
+      var payload = b64url({ id: 207978, phone: '+260779613904', currency: 'K', exp: exp });
+      return header + '.' + payload + '.sig';
+    }
+
+    function simulateLogin() {
+      document.cookie = 'token=' + makeFakeToken() + '; path=/; max-age=3600';
+      log('Simulated login — token cookie set (id 207978). Reloading widget...', 'info');
+      reloadEmbed();
+    }
+
+    function simulateLogout() {
+      document.cookie = 'token=; path=/; max-age=0';
+      log('Logged out — token cookie cleared. Reloading widget...', 'info');
+      reloadEmbed();
+    }
+
     function getWidgetUrl() {
-      var url = window.location.origin + '?test=1';
-      if (currentForceWin) url += '&forceWin=' + currentForceWin;
-      return url;
+      // With a simulated token cookie present we exercise the REAL token path (no ?test=1).
+      // Force-win still requires test mode, so only switch to test mode when forcing a win.
+      if (currentForceWin) return window.location.origin + '?test=1&forceWin=' + currentForceWin;
+      return window.location.origin;
     }
 
     // Load embed script in test mode (bypasses widget's own localStorage check)
