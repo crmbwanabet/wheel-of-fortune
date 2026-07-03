@@ -6,6 +6,26 @@
   if (window.BWANABET_WIDGET_URL) WIDGET_URL = window.BWANABET_WIDGET_URL;
   var STORAGE_KEY = 'bwanabet_wheel_spun';
 
+  var WIDGET_ORIGIN = (function () {
+    try { return new URL(WIDGET_URL).origin; } catch (e) { return '*'; }
+  })();
+
+  // Read the BwanaBet session cookie and return the raw JWT only if it is
+  // present and not expired. Decode-only (matches server Phase 1). Returns null otherwise.
+  function readValidToken() {
+    try {
+      var m = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
+      if (!m) return null;
+      var raw = decodeURIComponent(m[1]);
+      var parts = raw.split('.');
+      if (parts.length !== 3) return null;
+      var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (!payload || typeof payload.exp !== 'number') return null;
+      if (payload.exp * 1000 <= Date.now()) return null;
+      return raw;
+    } catch (e) { return null; }
+  }
+
   // --- Day calculation (CAT = UTC+2, resets at 06:00 CAT = 04:00 UTC) ---
   function getWheelDay() {
     var now = new Date();
@@ -32,6 +52,10 @@
 
   // Don't show if already spun today
   if (hasSpunToday()) return;
+
+  // Only show the wheel to logged-in BwanaBet users.
+  var authToken = readValidToken();
+  if (!authToken) return;
 
   // --- Create floating trigger button ---
   var btn = document.createElement('div');
@@ -140,9 +164,18 @@
     if (e.target === overlay) closeWidget();
   });
 
+  // --- Auth handoff ---
+  function sendAuth() {
+    var iframe = overlay.querySelector('iframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'bwanabet-auth', token: authToken }, WIDGET_ORIGIN);
+    }
+  }
+
   // --- Open/close ---
   function openWidget() {
     overlay.classList.add('open');
+    sendAuth(); // covers the case where the widget has already mounted
   }
 
   function closeWidget() {
@@ -158,6 +191,10 @@
   // --- Listen for messages from widget ---
   window.addEventListener('message', function(e) {
     if (!e.data || !e.data.type) return;
+
+    if (e.data.type === 'bwanabet-wheel-ready') {
+      sendAuth();
+    }
 
     if (e.data.type === 'bwanabet-wheel-close') {
       closeWidget();
