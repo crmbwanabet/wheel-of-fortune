@@ -115,11 +115,8 @@ function useParticleSystem() {
 // MAIN WIDGET
 // ============================================================================
 export default function WheelWidget({ prefillUserId = null }) {
-  // Screen flow: checking → prompt → spinning → stopping → result → done
+  // Screen flow: checking → needLogin | prompt → spinning → stopping → result → done
   const [screen, setScreen] = useState('checking');
-  const [customerId, setCustomerId] = useState(prefillUserId || '');
-  const [validationError, setValidationError] = useState('');
-  const [validating, setValidating] = useState(false);
   const [spinResult, setSpinResult] = useState(null);
   const [showFlash, setShowFlash] = useState(false);
   const [wheelConfetti, setWheelConfetti] = useState(false);
@@ -132,6 +129,7 @@ export default function WheelWidget({ prefillUserId = null }) {
   const [prizeFlash, setPrizeFlash] = useState(false);
 
   const fingerprintRef = useRef(null);
+  const authTokenRef = useRef(null); // raw BwanaBet JWT, received from parent via postMessage
 
   // Spin refs
   const spinAngleRef = useRef(0);
@@ -219,16 +217,38 @@ export default function WheelWidget({ prefillUserId = null }) {
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const isTestMode = searchParams?.get('test') === '1';
   const forceWinParam = searchParams?.get('forceWin');
+  // In test mode the server uses an explicit customerId (no token); default 12345.
+  const testCustomerId = (prefillUserId || '12345').toString().trim();
 
-  // On mount: check localStorage + generate fingerprint
+  // On mount: generate fingerprint, then resolve the entry screen.
+  // Test mode goes straight to the prompt. Real mode waits for the parent
+  // (embed.js) to postMessage the BwanaBet session token.
   useEffect(() => {
     generateFingerprint().then(fp => { fingerprintRef.current = fp; }).catch(() => {});
 
-    if (!isTestMode && hasSpunToday()) {
-      setScreen('done');
-    } else {
+    if (isTestMode) {
       setScreen('prompt');
+      return;
     }
+
+    const onMessage = (e) => {
+      if (e.data?.type === 'bwanabet-auth' && typeof e.data.token === 'string' && e.data.token) {
+        authTokenRef.current = e.data.token;
+        setScreen(hasSpunToday() ? 'done' : 'prompt');
+      }
+    };
+    window.addEventListener('message', onMessage);
+
+    // Ask the parent for the token (handshake). embed.js replies with 'bwanabet-auth'.
+    window.parent.postMessage({ type: 'bwanabet-wheel-ready' }, '*');
+
+    // If no token arrives (e.g. widget opened directly / logged out), show the login notice.
+    const fallback = setTimeout(() => {
+      if (!authTokenRef.current) setScreen('needLogin');
+    }, 2000);
+
+    return () => { window.removeEventListener('message', onMessage); clearTimeout(fallback); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Main animation loop — 3 phases: free spin → friction brake → easing to target
@@ -405,35 +425,10 @@ export default function WheelWidget({ prefillUserId = null }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
 
-  // Validate customer ID and start playing
-  const handleValidateAndPlay = useCallback(async () => {
-    const id = customerId.trim();
-    if (!id) {
-      setValidationError('Please enter your BwanaBet ID');
-      return;
-    }
-    setValidating(true);
-    setValidationError('');
-    try {
-      const res = await fetch('/api/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId: id, fingerprint: fingerprintRef.current }),
-      });
-      const data = await res.json();
-      if (!data.valid) {
-        setValidationError(data.error || 'Invalid ID. Please check and try again.');
-        setValidating(false);
-        return;
-      }
-      // Valid — start spinning
-      setValidating(false);
-      setScreen('spinning');
-    } catch (err) {
-      setValidationError('Network error. Please try again.');
-      setValidating(false);
-    }
-  }, [customerId]);
+  // Start playing — identity is already established (token in real mode, test id in test mode)
+  const startPlaying = useCallback(() => {
+    setScreen('spinning');
+  }, []);
 
   // STOP — brake immediately, API call in background
   const stopWheel = useCallback(() => {
@@ -448,7 +443,11 @@ export default function WheelWidget({ prefillUserId = null }) {
     fetch('/api/spin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId: customerId.trim(), fingerprint: fingerprintRef.current, test: isTestMode, ...(forceWinParam ? { forceWin: Number(forceWinParam) || true } : {}) }),
+      body: JSON.stringify(
+        isTestMode
+          ? { customerId: testCustomerId, fingerprint: fingerprintRef.current, test: true, ...(forceWinParam ? { forceWin: Number(forceWinParam) || true } : {}) }
+          : { token: authTokenRef.current, fingerprint: fingerprintRef.current }
+      ),
     })
       .then(res => res.json())
       .then(data => {
@@ -480,7 +479,7 @@ export default function WheelWidget({ prefillUserId = null }) {
         pendingResultRef.current = { winIndex: randomLoss, data: { segmentIndex: randomLoss, won: false, prize: 0 } };
         winSegmentRef.current = WHEEL_SEGMENTS[randomLoss];
       });
-  }, [customerId]);
+  }, [isTestMode, forceWinParam, testCustomerId]);
 
   // CLAIM — transition to done (or back to prompt in test mode)
   const claimPrize = useCallback(() => {
@@ -570,6 +569,29 @@ export default function WheelWidget({ prefillUserId = null }) {
       )}
 
       {/* ============================================================ */}
+      {/* NEED-LOGIN OVERLAY — shown when no BwanaBet session token     */}
+      {/* ============================================================ */}
+      {screen === 'needLogin' && (
+        <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
+          <div className="relative text-center p-8 rounded-2xl max-w-xs w-full mx-4" style={{
+            background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
+            border: '3px solid #3a3f52',
+            boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
+          }}>
+            <button type="button" onClick={handleClose}
+              className="absolute top-3 right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
+              style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 2px 8px rgba(239,68,68,0.5)' }}>
+              <X className="w-5 h-5 text-white" strokeWidth={3} />
+            </button>
+            <div className="text-lg font-extrabold uppercase tracking-widest mb-2 mt-4" style={{ color: 'rgba(255,255,255,0.85)', letterSpacing: '2px' }}>
+              PLEASE LOG IN
+            </div>
+            <p className="text-gray-400 text-sm mb-2">Log in to your BwanaBet account to spin the wheel.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
       {/* PROMPT OVERLAY — wheel visible behind                        */}
       {/* ============================================================ */}
       {screen === 'prompt' && (
@@ -604,40 +626,18 @@ export default function WheelWidget({ prefillUserId = null }) {
                 filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
               }}>WIN</span>
             </h1>
-            <p className="text-white text-sm mt-2 mb-5">Enter your BwanaBet ID to play</p>
-
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={customerId}
-              onChange={e => { setCustomerId(e.target.value); setValidationError(''); }}
-              onKeyDown={e => { if (e.key === 'Enter' && !validating) handleValidateAndPlay(); }}
-              placeholder="Your BwanaBet ID"
-              className="w-full px-4 py-3 rounded-xl text-center text-lg font-bold text-white outline-none transition-all focus:ring-2 focus:ring-amber-400/50"
-              style={{
-                background: 'rgba(0,0,0,0.4)',
-                border: validationError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.1)',
-                '::placeholder': { color: 'rgba(255,255,255,0.4)' },
-              }}
-              disabled={validating}
-            />
-
-            {validationError && (
-              <p className="text-red-400 text-xs mt-2 font-medium">{validationError}</p>
-            )}
+            <p className="text-white text-sm mt-2 mb-5">Tap below and spin to win!</p>
 
             <button
               type="button"
-              onClick={handleValidateAndPlay}
-              disabled={validating}
-              className="w-full mt-4 py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={startPlaying}
+              className="w-full mt-2 py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95"
               style={{
                 background: 'linear-gradient(135deg, #f59e0b, #d97706)',
                 boxShadow: '0 4px 15px rgba(245,158,11,0.3)',
               }}
             >
-              {validating ? 'Checking...' : 'Play!'}
+              Play!
             </button>
           </div>
         </div>
