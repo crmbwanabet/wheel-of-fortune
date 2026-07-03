@@ -7,6 +7,7 @@ import {
   buildWinningMap,
 } from '@/lib/algorithms';
 import { sendWinNotification } from '@/lib/telegram';
+import { verifyBwanaToken, TokenError } from '@/lib/bwanaAuth.mjs';
 
 export async function POST(request) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
@@ -28,11 +29,25 @@ export async function POST(request) {
     return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
   }
 
-  const { customerId, fingerprint } = body;
+  const { token, customerId, fingerprint } = body;
 
-  if (!customerId || typeof customerId !== 'string' || customerId.trim() === '') {
-    return NextResponse.json({ error: 'missing_customer_id' }, { status: 400 });
+  // Identity: test traffic keeps using an explicit customerId; real traffic
+  // derives the id by decoding the BwanaBet session token (Phase 1: no signature check).
+  let cleanId;
+  if (isTest) {
+    if (!customerId || typeof customerId !== 'string' || customerId.trim() === '') {
+      return NextResponse.json({ error: 'missing_customer_id' }, { status: 400 });
+    }
+    cleanId = customerId.trim();
+  } else {
+    try {
+      cleanId = verifyBwanaToken(token).id;
+    } catch (err) {
+      const code = err instanceof TokenError && err.code === 'expired' ? 'token_expired' : 'invalid_token';
+      return NextResponse.json({ error: code }, { status: 401 });
+    }
   }
+
   const forceWin = isTest && typeof body.forceWin === 'number' ? body.forceWin : null;
   const bucket = isTest
     ? (typeof body.testBucket === 'string' && body.testBucket.length > 0 ? body.testBucket : 'stress')
@@ -40,8 +55,6 @@ export async function POST(request) {
   // In test mode, default to skipping dedupe (load tests use unique IDs). Tests
   // that want to verify dedupe itself send body.skipDedupe:false to force it on.
   const skipDedupe = isTest && body.skipDedupe !== false;
-
-  const cleanId = customerId.trim();
   const dayDate = getWheelDayDate();
   const algorithmId = pickAlgorithm();
   const winningPositions = buildWinningMap(algorithmId);
