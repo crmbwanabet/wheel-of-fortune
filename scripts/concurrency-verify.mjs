@@ -18,6 +18,14 @@ const BUCKET = 'conc-' + Date.now().toString(36);
 const TOKEN = process.env.WHEEL_TEST_TOKEN;
 if (!TOKEN) { console.error('WHEEL_TEST_TOKEN required'); process.exit(1); }
 
+// Raise the client connection pool so `concurrency` is real, not capped by
+// undici's default per-origin limit. No-ops if undici isn't importable.
+try {
+  const { Agent, setGlobalDispatcher } = await import('undici');
+  setGlobalDispatcher(new Agent({ connections: CONC + 50, connectTimeout: 15000, headersTimeout: 30000, bodyTimeout: 30000 }));
+  console.log(`(undici pool raised to ${CONC + 50} connections)`);
+} catch { console.log('(undici not available — using default fetch pool)'); }
+
 async function spin(i) {
   const t0 = performance.now();
   try {
