@@ -68,6 +68,31 @@ function markSpun() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ day: getWheelDayClient() }));
 }
 
+// One retry on network error / 503 server_busy — a timed-out spin is safe to
+// retry because the server dedupes (returns already_spun if the first committed).
+async function postSpinWithRetry(body) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch('/api/spin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 503 && attempt === 0) {
+        await new Promise(r => setTimeout(r, 600));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (attempt === 0) {
+        await new Promise(r => setTimeout(r, 600));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 // ============================================================================
 // PARTICLE SYSTEM — colored shapes (no emojis)
 // ============================================================================
@@ -493,16 +518,13 @@ export default function WheelWidget({ prefillUserId = null }) {
     brakingRef.current = true;
     brakingSpeedRef.current = SPIN_SPEED;
 
-    // API call in background — when it responds, set up exact landing target
-    fetch('/api/spin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(
-        isTestMode
-          ? { customerId: testCustomerId, fingerprint: fingerprintRef.current, test: true, ...(forceWinParam ? { forceWin: Number(forceWinParam) || true } : {}) }
-          : { token: authTokenRef.current, fingerprint: fingerprintRef.current }
-      ),
-    })
+    // API call in background — when it responds, set up exact landing target.
+    // Retries once on network error / server_busy (safe: server dedupes).
+    postSpinWithRetry(
+      isTestMode
+        ? { customerId: testCustomerId, fingerprint: fingerprintRef.current, test: true, ...(forceWinParam ? { forceWin: Number(forceWinParam) || true } : {}) }
+        : { token: authTokenRef.current, fingerprint: fingerprintRef.current }
+    )
       .then(res => res.json())
       .then(data => {
         if (data.error === 'already_spun') {
