@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { getSupabase } from '@/lib/supabase';
 import { checkRateLimit } from '@/lib/rateLimit';
 import {
@@ -8,6 +9,11 @@ import {
 } from '@/lib/algorithms';
 import { sendWinNotification } from '@/lib/telegram';
 import { verifyBwanaToken, TokenError } from '@/lib/bwanaAuth.mjs';
+
+// Colocate with the Supabase database (eu-west-1 / Dublin) to remove
+// cross-region round trips from every query on the hot path.
+export const preferredRegion = ['dub1'];
+export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
@@ -61,30 +67,30 @@ export async function POST(request) {
 
   const supabase = getSupabase();
 
-  // Idempotent day init
-  const { error: ensureErr } = await supabase.rpc('ensure_daily_state', {
-    p_day: dayDate,
-    p_bucket: bucket,
-    p_algorithm_id: algorithmId,
-    p_winning_positions: winningPositions,
-  });
-  if (ensureErr) {
-    console.error('[spin] ensure_daily_state failed:', ensureErr);
-    return NextResponse.json({ error: 'server_error' }, { status: 500 });
-  }
-
-  // Atomic claim
+  // Atomic claim — day-init (state row + per-day sequence) is folded into
+  // claim_spin, so a spin is a single DB round trip.
   const { data: result, error: claimErr } = await supabase.rpc('claim_spin', {
     p_day: dayDate,
     p_bucket: bucket,
     p_customer: cleanId,
     p_fingerprint: fingerprint || null,
     p_ip: ip,
+    p_algorithm_id: algorithmId,
+    p_winning_positions: winningPositions,
     p_skip_dedupe: skipDedupe,
     p_force_prize: forceWin,
   });
-  if (claimErr || !result) {
+  if (claimErr) {
+    // 57014 = statement_timeout: admission control shedding load. Ask the client
+    // to back off rather than surfacing a hard error.
+    if (claimErr.code === '57014') {
+      return NextResponse.json({ error: 'server_busy' }, { status: 503 });
+    }
     console.error('[spin] claim_spin failed:', claimErr);
+    return NextResponse.json({ error: 'server_error' }, { status: 500 });
+  }
+  if (!result) {
+    console.error('[spin] claim_spin returned no result');
     return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 
@@ -96,17 +102,18 @@ export async function POST(request) {
     return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 
-  // Telegram notification on real (non-test) wins.
-  // Awaited (not fire-and-forget) because Vercel serverless terminates the
-  // function as soon as the response is sent, which would kill an unawaited fetch.
-  // Adds ~200ms on wins only; loss responses are unaffected.
+  // Telegram notification on real (non-test) wins — dispatched AFTER the response
+  // via waitUntil so the spinner returns immediately. waitUntil keeps the
+  // serverless function alive for the send without blocking the spin result.
   if (result.win && !isTest) {
-    await sendWinNotification({
-      customerId: cleanId,
-      prizeAmount: result.prize_amount,
-      winsToday: result.wins_today,
-      budgetSpent: result.budget_today,
-    }).catch(err => console.error('[spin] Telegram notify failed:', err?.message));
+    waitUntil(
+      sendWinNotification({
+        customerId: cleanId,
+        prizeAmount: result.prize_amount,
+        winsToday: result.wins_today,
+        budgetSpent: result.budget_today,
+      }).catch(err => console.error('[spin] Telegram notify failed:', err?.message))
+    );
   }
 
   return NextResponse.json({
