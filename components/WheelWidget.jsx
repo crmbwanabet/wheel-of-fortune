@@ -24,6 +24,23 @@ const NUM = WHEEL_SEGMENTS.length;
 const SEG_ANGLE = 360 / NUM;
 
 // ============================================================================
+// AUTH ORIGIN ALLOWLIST
+// The widget receives the BwanaBet session token from its parent page via
+// postMessage. Only accept that token from a known BwanaBet origin (or from
+// our own origin, which covers the local test harness and direct opens).
+// Add any further BwanaBet host domains here as they are confirmed.
+// ============================================================================
+const ALLOWED_AUTH_ORIGINS = new Set([
+  'https://bwanabet.com',
+  'https://bwanabet.co.zm',
+]);
+
+function isAllowedAuthOrigin(origin) {
+  if (typeof window !== 'undefined' && origin === window.location.origin) return true;
+  return ALLOWED_AUTH_ORIGINS.has(origin);
+}
+
+// ============================================================================
 // LOCALSTORAGE — 6am CAT reset
 // ============================================================================
 const STORAGE_KEY = 'bwanabet_wheel_spin';
@@ -267,6 +284,8 @@ export default function WheelWidget({ prefillUserId = null }) {
     };
 
     const onMessage = (e) => {
+      // Only trust a token from a known BwanaBet origin (or our own origin).
+      if (!isAllowedAuthOrigin(e.origin)) return;
       if (e.data?.type === 'bwanabet-auth' && typeof e.data.token === 'string' && e.data.token) {
         authTokenRef.current = e.data.token;
         resolveAvailability(e.data.token);
