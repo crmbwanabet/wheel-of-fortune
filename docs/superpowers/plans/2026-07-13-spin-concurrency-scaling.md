@@ -10,6 +10,21 @@
 
 **Reference spec:** `docs/superpowers/specs/2026-07-13-spin-concurrency-scaling-design.md`
 
+**Supabase branch ref (`<BRANCH_REF>`):** `uifvxsmguocfpyzdloyb` (branch `spin-scaling`, created + torn down 2026-07-13).
+
+## Execution outcome (2026-07-13)
+
+Shipped the free changes to production and validated against the current system.
+
+- **`claim_spin` must be `SECURITY DEFINER`** (with `SET search_path = public, pg_temp`). It runs `CREATE SEQUENCE` on first spin, which needs CREATE on schema `public` — `service_role` lacks that, so as `SECURITY INVOKER` the live route got `403 permission denied for schema public`. The branch smoke test ran as superuser and masked this; only the real service-role HTTP path surfaced it. Applied via migration `claim_spin_security_definer`. Same fix applied to `drop_stale_wheel_sequences`.
+- **Benchmark (prod, isolated buckets), new code vs the old-system baseline:**
+  - Old system @ concurrency 40: ~75 rps, p99 4.8s, **max 128s, 58 timeouts**.
+  - New system @ concurrency 40: 72 rps, p50 274ms, **max 16.7s, 0 failures** (throughput here is single-client-limited).
+  - New system @ concurrency 150: **288 rps** (scales ~4× with concurrency), p50 321ms, p99 4.0s, max 6.3s, **0 failures, 0 server_busy**.
+  - DB correctness under real HTTP concurrency: unique contiguous ordinals (2000/2000, 3000/3000), payout under budget.
+- **Necessity conclusion — no compute bump needed.** Throughput scaled near-linearly with concurrency and the DB never saturated (nextval is lock-free). The remaining latency tail is Vercel serverless cold-starts, which a Supabase compute bump would not address. Mitigate a 06:00 spike by staggering notifications, not by paying for bigger compute.
+- **Deferred cleanup (low priority):** the old `claim_spin` 7-arg overload is kept as a rollback net (drop after a bake period); sequence cleanup runs via `drop_stale_wheel_sequences()` (no `pg_cron` on this project — schedule via a Vercel cron or run manually; sequences are ~1/day so accumulation is negligible).
+
 ---
 
 ## File / object map
