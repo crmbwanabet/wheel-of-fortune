@@ -2,5 +2,8 @@
   "functions": {
     "app/api/spin/route.js": { "maxDuration": 15 }
   },
-  "regions": ["dub1"]
+  "regions": ["dub1"],
+  "crons": [
+    { "path": "/api/digest", "schedule": "10 4 * * *" }
+  ]
 }
