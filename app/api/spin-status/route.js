@@ -8,6 +8,11 @@ import { verifyBwanaToken, TokenError } from '@/lib/bwanaAuth.mjs';
 // the atomic claim in /api/spin remains the source of truth, so this can
 // fail open on server errors without risking a double spin.
 export async function POST(request) {
+  // Kill-switch: return immediately without touching the DB (incident relief).
+  if (process.env.SPIN_MAINTENANCE === '1') {
+    return NextResponse.json({ available: false, maintenance: true });
+  }
+
   let body;
   try {
     body = await request.json();

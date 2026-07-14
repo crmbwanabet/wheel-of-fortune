@@ -16,6 +16,12 @@ export const preferredRegion = ['dub1'];
 export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
+  // Kill-switch: when set, return immediately WITHOUT touching the database.
+  // Used to relieve DB connection pressure during an incident.
+  if (process.env.SPIN_MAINTENANCE === '1') {
+    return NextResponse.json({ error: 'maintenance' }, { status: 503 });
+  }
+
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
 
   let body;
