@@ -9,13 +9,14 @@ import {
 } from '@/lib/algorithms';
 import { sendWinNotification } from '@/lib/telegram';
 import { verifyBwanaToken, TokenError } from '@/lib/bwanaAuth.mjs';
+import { reportError } from '@/lib/telemetry';
 
 // Colocate with the Supabase database (eu-west-1 / Dublin) to remove
 // cross-region round trips from every query on the hot path.
 export const preferredRegion = ['dub1'];
 export const dynamic = 'force-dynamic';
 
-export async function POST(request) {
+async function handleSpin(request) {
   // Kill-switch: when set, return immediately WITHOUT touching the database.
   // Used to relieve DB connection pressure during an incident.
   if (process.env.SPIN_MAINTENANCE === '1') {
@@ -87,16 +88,15 @@ export async function POST(request) {
     p_force_prize: forceWin,
   });
   if (claimErr) {
-    // 57014 = statement_timeout: admission control shedding load. Ask the client
-    // to back off rather than surfacing a hard error.
     if (claimErr.code === '57014') {
+      waitUntil(reportError(claimErr, { route: 'spin', status: 503, code: 'server_busy' }));
       return NextResponse.json({ error: 'server_busy' }, { status: 503 });
     }
-    console.error('[spin] claim_spin failed:', claimErr);
+    waitUntil(reportError(claimErr, { route: 'spin', status: 500, code: 'claim_failed', customerId: cleanId }));
     return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
   if (!result) {
-    console.error('[spin] claim_spin returned no result');
+    waitUntil(reportError(new Error('claim_spin returned no result'), { route: 'spin', status: 500, code: 'no_result' }));
     return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 
@@ -104,7 +104,7 @@ export async function POST(request) {
     return NextResponse.json({ error: 'already_spun' });
   }
   if (result.error) {
-    console.error('[spin] RPC returned error:', result.error);
+    waitUntil(reportError(new Error(`RPC error: ${result.error}`), { route: 'spin', status: 500, code: result.error }));
     return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 
@@ -127,4 +127,15 @@ export async function POST(request) {
     segmentIndex: result.segment_index,
     prize: result.win ? { kwacha: result.prize_amount } : null,
   });
+}
+
+// Catch-all: any unhandled/unexpected error is reported (future-proofing) and
+// returned as a generic 500. reportError is fire-and-forget via waitUntil.
+export async function POST(request) {
+  try {
+    return await handleSpin(request);
+  } catch (err) {
+    waitUntil(reportError(err, { route: 'spin', status: 500, code: 'unhandled' }));
+    return NextResponse.json({ error: 'server_error' }, { status: 500 });
+  }
 }
