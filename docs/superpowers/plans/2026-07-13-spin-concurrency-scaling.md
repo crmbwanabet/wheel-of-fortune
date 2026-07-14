@@ -22,7 +22,21 @@ Shipped the free changes to production and validated against the current system.
   - New system @ concurrency 40: 72 rps, p50 274ms, **max 16.7s, 0 failures** (throughput here is single-client-limited).
   - New system @ concurrency 150: **288 rps** (scales ~4× with concurrency), p50 321ms, p99 4.0s, max 6.3s, **0 failures, 0 server_busy**.
   - DB correctness under real HTTP concurrency: unique contiguous ordinals (2000/2000, 3000/3000), payout under budget.
-- **Necessity conclusion — no compute bump needed.** Throughput scaled near-linearly with concurrency and the DB never saturated (nextval is lock-free). The remaining latency tail is Vercel serverless cold-starts, which a Supabase compute bump would not address. Mitigate a 06:00 spike by staggering notifications, not by paying for bigger compute.
+- **Provisional conclusion (later corrected):** single-machine tests suggested no compute bump was needed. **This was wrong — the test client was the bottleneck, masking the real ceiling.**
+
+## Corrected findings — distributed k6 test (2026-07-14)
+
+Ran k6 from a dedicated 16-vCPU AWS c5.4xlarge (generator no longer the limit):
+
+- **1,000 VUs:** ~17% of requests exceeded the 15s Vercel function ceiling (median 2.68s, p90 15.2s). The DB still **processed 10,049 spins with unique contiguous ordinals and exact K2,000** — correctness never broke; the server just couldn't return in time.
+- **10,000 VUs:** collapse — **100% client failures**, only **386 spins processed** before everything jammed.
+- **Root cause: `max_connections = 60`** on the small Supabase compute (2 vCPU). Thousands of concurrent requests queue for 60 DB connections and the 2-core CPU saturates, so requests wait past 15s. **The row-lock was removed, but the DB connection/compute tier is the new — and real — ceiling.**
+
+**Revised conclusion: the free fix is necessary but NOT sufficient for 1,000+ concurrent.** Meeting the target requires scaling the DB tier:
+1. **Connection pooler (Supavisor, transaction mode)** — multiplex many clients over few DB connections. Requires switching the spin route from supabase-js/PostgREST to a pooled `pg` client. Likely the highest-leverage change; low infra cost.
+2. **Supabase compute bump** — more connections + CPU. Hourly-billable, can be temporary for events. Simple, recurring cost.
+3. **Redis (Upstash) offload** — move the hot counter path off Postgres (original Approach 1). Best for true 10,000+; adds infra (free tier exists).
+4. **Stagger notifications** — still the free mitigation to keep real peak concurrency well below the ceiling.
 - **Deferred cleanup (low priority):** the old `claim_spin` 7-arg overload is kept as a rollback net (drop after a bake period); sequence cleanup runs via `drop_stale_wheel_sequences()` (no `pg_cron` on this project — schedule via a Vercel cron or run manually; sequences are ~1/day so accumulation is negligible).
 
 ---
