@@ -93,6 +93,23 @@ async function postSpinWithRetry(body) {
   }
 }
 
+// Best-effort client error reporter → /api/telemetry. Deduped to one report
+// per signature per page load; fully fire-and-forget (never throws/awaits).
+const _reportedSigs = new Set();
+function reportClientError(type, message, context) {
+  try {
+    const sig = `${type}:${String(message).slice(0, 80)}`;
+    if (_reportedSigs.has(sig)) return;
+    _reportedSigs.add(sig);
+    fetch('/api/telemetry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, message: String(message).slice(0, 500), context }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch { /* never break the widget */ }
+}
+
 // ============================================================================
 // PARTICLE SYSTEM — colored shapes (no emojis)
 // ============================================================================
@@ -330,6 +347,19 @@ export default function WheelWidget({ prefillUserId = null }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Report uncaught client-side JS errors and promise rejections to telemetry.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onError = (e) => reportClientError('window_error', e?.message || 'error', e?.filename);
+    const onRejection = (e) => reportClientError('unhandled_rejection', e?.reason?.message || String(e?.reason), null);
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, []);
+
   // Main animation loop — 3 phases: free spin → friction brake → easing to target
   const spinActiveRef = useRef(false);
   useEffect(() => {
@@ -537,6 +567,7 @@ export default function WheelWidget({ prefillUserId = null }) {
           return;
         }
         if (data.error) {
+          reportClientError('spin_failed', data.error || 'unknown', null);
           // Land on a random loss segment on error too
           const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
           const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
@@ -549,6 +580,7 @@ export default function WheelWidget({ prefillUserId = null }) {
         pendingResultRef.current = { winIndex: data.segmentIndex, data };
       })
       .catch(() => {
+        reportClientError('spin_network_error', 'spin request failed', null);
         // Land on a random loss segment on network error
         const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
         const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
