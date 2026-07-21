@@ -33,6 +33,9 @@ const SEG_ANGLE = 360 / NUM;
 const ALLOWED_AUTH_ORIGINS = new Set([
   'https://bwanabet.com',
   'https://bwanabet.co.zm',
+  // TEMPORARY (2026-07-21): BwanaBet dev environment for pre-launch widget
+  // testing. Remove once the team confirms testing is done.
+  'https://dev-bwanabet.energaming.services',
 ]);
 
 function isAllowedAuthOrigin(origin) {
