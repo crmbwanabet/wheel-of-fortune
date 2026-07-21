@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS wheel_deposit_checks (
   customer_id         text        NOT NULL,
   mode                text        NOT NULL,   -- shadow | enforce
   decision            text        NOT NULL,   -- check's sync verdict: eligible | forced_loss
-  enforced            boolean     NOT NULL,   -- true only when the verdict actually affected the spin
+  enforced            boolean     NOT NULL,   -- true only when the gate actually converted a would-be win into a loss (enforce mode + forced_loss_ineligible)
   reason              text        NOT NULL,   -- deposit_found | no_deposit | timeout | error
   sync_latency_ms     int,
   eventual_eligible   boolean,                -- null if the bg call never returned

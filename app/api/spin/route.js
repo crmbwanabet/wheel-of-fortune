@@ -163,6 +163,11 @@ async function handleSpin(request) {
   // off the hot path. Only for real gated traffic.
   if (gateActive && depositSync) {
     const decision = depositSync.eligible ? 'eligible' : 'forced_loss';
+    // `enforced` = did the gate ACTUALLY convert a would-be win into a loss?
+    // claim_spin reports this via forced_loss_ineligible (only ever true in
+    // enforce mode, since shadow passes p_eligible=true). This is the real
+    // "a win was blocked" signal — distinct from mode and from decision.
+    const enforced = Boolean(result?.forced_loss_ineligible);
     waitUntil((async () => {
       let eventual = null;
       try {
@@ -179,7 +184,7 @@ async function handleSpin(request) {
           customer_id: cleanId,
           mode: DEPOSIT_GATE_MODE,
           decision,
-          enforced: DEPOSIT_GATE_MODE === 'enforce',
+          enforced,
           reason: depositSync.reason,
           sync_latency_ms: depositSync.latencyMs ?? null,
           eventual_eligible: eventual && typeof eventual.eligible === 'boolean' ? eventual.eligible : null,
