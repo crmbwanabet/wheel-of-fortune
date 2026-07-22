@@ -10,11 +10,19 @@ import {
 import { sendWinNotification } from '@/lib/telegram';
 import { verifyBwanaToken, TokenError } from '@/lib/bwanaAuth.mjs';
 import { reportError } from '@/lib/telemetry';
+import { checkDepositEligibility } from '@/lib/depositCheck';
 
 // Colocate with the Supabase database (eu-west-1 / Dublin) to remove
 // cross-region round trips from every query on the hot path.
 export const preferredRegion = ['dub1'];
 export const dynamic = 'force-dynamic';
+
+// Deposit-eligibility gate config. Mode: 'off' (no check) | 'shadow' (check +
+// log, outcome unaffected) | 'enforce' (check gates the win). See spec
+// 2026-07-21-wheel-deposit-eligibility-gate-design.md.
+const DEPOSIT_GATE_MODE = process.env.DEPOSIT_GATE_MODE || 'off';
+const DEPOSIT_CHECK_TIMEOUT_MS = Number(process.env.DEPOSIT_CHECK_TIMEOUT_MS) || 2000;
+const DEPOSIT_CHECK_BG_CAP_MS = Number(process.env.DEPOSIT_CHECK_BG_CAP_MS) || 10000;
 
 async function handleSpin(request) {
   // Kill-switch: when set, return immediately WITHOUT touching the database.
@@ -74,6 +82,34 @@ async function handleSpin(request) {
 
   const supabase = getSupabase();
 
+  // --- Deposit-eligibility gate ---
+  // Real traffic only; test/load traffic bypasses the external call entirely.
+  // Effective eligibility feeds claim_spin; the full result is logged async.
+  let effectiveEligible = true;      // default: do not block (off / shadow / test)
+  let depositCompletion = null;      // Promise<eventual> to log via waitUntil
+  let depositSync = null;            // sync verdict for logging
+  const gateActive = !isTest && (DEPOSIT_GATE_MODE === 'shadow' || DEPOSIT_GATE_MODE === 'enforce');
+
+  if (gateActive) {
+    try {
+      const check = await checkDepositEligibility({
+        token,
+        timeoutMs: DEPOSIT_CHECK_TIMEOUT_MS,
+        bgCapMs: DEPOSIT_CHECK_BG_CAP_MS,
+      });
+      depositSync = check.sync;
+      depositCompletion = check.completion;
+      if (DEPOSIT_GATE_MODE === 'enforce') {
+        effectiveEligible = check.sync.eligible;
+      }
+    } catch (err) {
+      // Never let the gate break a spin. Fail-closed only in enforce mode.
+      waitUntil(reportError(err, { route: 'spin', status: 200, code: 'deposit_check_threw' }));
+      if (DEPOSIT_GATE_MODE === 'enforce') effectiveEligible = false;
+      depositSync = { eligible: effectiveEligible, reason: 'error', latencyMs: null };
+    }
+  }
+
   // Atomic claim — day-init (state row + per-day sequence) is folded into
   // claim_spin, so a spin is a single DB round trip.
   const { data: result, error: claimErr } = await supabase.rpc('claim_spin', {
@@ -86,6 +122,7 @@ async function handleSpin(request) {
     p_winning_positions: winningPositions,
     p_skip_dedupe: skipDedupe,
     p_force_prize: forceWin,
+    p_eligible: effectiveEligible,
   });
   if (claimErr) {
     if (claimErr.code === '57014') {
@@ -120,6 +157,46 @@ async function handleSpin(request) {
         budgetSpent: result.budget_today,
       }).catch(err => console.error('[spin] Telegram notify failed:', err?.message))
     );
+  }
+
+  // Persist the deposit-check outcome (sync verdict + eventual ground truth)
+  // off the hot path. Only for real gated traffic.
+  if (gateActive && depositSync) {
+    const decision = depositSync.eligible ? 'eligible' : 'forced_loss';
+    // `enforced` = did the gate ACTUALLY convert a would-be win into a loss?
+    // claim_spin reports this via forced_loss_ineligible (only ever true in
+    // enforce mode, since shadow passes p_eligible=true). This is the real
+    // "a win was blocked" signal — distinct from mode and from decision.
+    const enforced = Boolean(result?.forced_loss_ineligible);
+    waitUntil((async () => {
+      let eventual = null;
+      try {
+        eventual = depositCompletion
+          ? await Promise.race([
+              depositCompletion,
+              new Promise((r) => setTimeout(() => r({ reason: 'bg_timeout' }), DEPOSIT_CHECK_BG_CAP_MS + 1000)),
+            ])
+          : null;
+      } catch { eventual = null; }
+      try {
+        await supabase.from('wheel_deposit_checks').insert({
+          day_date: dayDate,
+          customer_id: cleanId,
+          mode: DEPOSIT_GATE_MODE,
+          decision,
+          enforced,
+          reason: depositSync.reason,
+          sync_latency_ms: depositSync.latencyMs ?? null,
+          eventual_eligible: eventual && typeof eventual.eligible === 'boolean' ? eventual.eligible : null,
+          eventual_reason: eventual ? eventual.reason : null,
+          eventual_latency_ms: eventual && Number.isFinite(eventual.latencyMs) ? eventual.latencyMs : null,
+          http_status: eventual ? (eventual.httpStatus ?? null) : null,
+          error_text: eventual ? (eventual.error ?? null) : null,
+        });
+      } catch (err) {
+        reportError(err, { route: 'spin', status: 200, code: 'deposit_log_failed' });
+      }
+    })());
   }
 
   return NextResponse.json({

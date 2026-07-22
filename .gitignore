@@ -40,3 +40,6 @@ next-env.d.ts
 
 # claude code internals
 .superpowers/
+
+# git worktrees for isolated feature work
+.worktrees/
