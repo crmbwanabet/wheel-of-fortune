@@ -6,14 +6,21 @@ import { evaluateGateHealth, decideAlerts, formatGateAlert } from '@/lib/gateHea
 
 export const dynamic = 'force-dynamic';
 
-const WINDOW_MIN = Number(process.env.GATE_MONITOR_WINDOW_MIN) || 15;
-const COOLDOWN_MIN = Number(process.env.GATE_MONITOR_COOLDOWN_MIN) || 30;
+// Parse an env number, honoring a legitimate 0 (e.g. COOLDOWN_MIN=0 = alert every
+// run while a condition keeps firing). Only a missing/non-numeric value falls back.
+const envNum = (name, fallback) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const WINDOW_MIN = envNum('GATE_MONITOR_WINDOW_MIN', 15);
+const COOLDOWN_MIN = envNum('GATE_MONITOR_COOLDOWN_MIN', 30);
 const THRESHOLDS = {
-  minSample: Number(process.env.GATE_MONITOR_MIN_SAMPLE) || 10,
-  failRateShadow: Number(process.env.GATE_MONITOR_FAIL_RATE_SHADOW) || 0.30,
-  failRateEnforce: Number(process.env.GATE_MONITOR_FAIL_RATE_ENFORCE) || 0.20,
-  p95Ms: Number(process.env.GATE_MONITOR_P95_MS) || 1500,
-  falseDenials: Number(process.env.GATE_MONITOR_FALSE_DENIALS) || 3,
+  minSample: envNum('GATE_MONITOR_MIN_SAMPLE', 10),
+  failRateShadow: envNum('GATE_MONITOR_FAIL_RATE_SHADOW', 0.30),
+  failRateEnforce: envNum('GATE_MONITOR_FAIL_RATE_ENFORCE', 0.20),
+  p95Ms: envNum('GATE_MONITOR_P95_MS', 1500),
+  falseDenials: envNum('GATE_MONITOR_FALSE_DENIALS', 3),
 };
 
 export async function GET(request) { return handle(request); }
