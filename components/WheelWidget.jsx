@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { generateFingerprint } from '@/lib/fingerprint';
+import { hasSpun, withSpun } from '@/lib/spunCache.mjs';
 
 // ============================================================================
 // DATA — 10 segments: K10, K20, K50, K100, K200, Try Again Tomorrow ×5
@@ -58,17 +59,33 @@ function getWheelDayClient() {
   return catDate.toISOString().split('T')[0];
 }
 
-function hasSpunToday() {
+// Browser-safe decode of the BwanaBet JWT payload id (no signature check —
+// this only keys a client-side cache; the server re-verifies on every call).
+function customerIdFromToken(raw) {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return false;
-    const { day } = JSON.parse(stored);
-    return day === getWheelDayClient();
-  } catch { return false; }
+    const part = String(raw).split('.')[1];
+    const payload = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+    return payload && payload.id != null && payload.id !== '' ? String(payload.id) : null;
+  } catch {
+    return null;
+  }
 }
 
-function markSpun() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ day: getWheelDayClient() }));
+function hasSpunToday(customerId) {
+  try {
+    return hasSpun(localStorage.getItem(STORAGE_KEY), customerId, getWheelDayClient());
+  } catch {
+    return false;
+  }
+}
+
+function markSpun(customerId) {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      withSpun(localStorage.getItem(STORAGE_KEY), customerId, getWheelDayClient()),
+    );
+  } catch { /* ignore quota/availability errors */ }
 }
 
 // One retry on network error / 503 server_busy — a timed-out spin is safe to
@@ -303,7 +320,8 @@ export default function WheelWidget({ prefillUserId = null }) {
       if (checked) return;
       checked = true;
 
-      let available = !hasSpunToday();
+      const customerId = customerIdFromToken(token);
+      let available = !hasSpunToday(customerId);
       if (available) {
         try {
           const fp = await fpPromise;
@@ -322,7 +340,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       if (available) {
         setScreen('prompt');
       } else {
-        markSpun(); // sync localStorage so future page loads skip the check
+        markSpun(customerId); // sync localStorage so future page loads skip the check
         setScreen('done');
       }
       window.parent.postMessage({ type: 'bwanabet-wheel-available', available }, '*');
@@ -557,6 +575,7 @@ export default function WheelWidget({ prefillUserId = null }) {
 
     // API call in background — when it responds, set up exact landing target.
     // Retries once on network error / server_busy (safe: server dedupes).
+    const spunCustomerId = customerIdFromToken(authTokenRef.current);
     postSpinWithRetry(
       isTestMode
         ? { customerId: testCustomerId, fingerprint: fingerprintRef.current, test: true, ...(forceWinParam ? { forceWin: Number(forceWinParam) || true } : {}) }
@@ -565,7 +584,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       .then(res => res.json())
       .then(data => {
         if (data.error === 'already_spun') {
-          markSpun();
+          markSpun(spunCustomerId);
           // Land on a random loss segment — let wheel decelerate naturally
           const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
           const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
@@ -582,7 +601,7 @@ export default function WheelWidget({ prefillUserId = null }) {
           winSegmentRef.current = WHEEL_SEGMENTS[randomLoss];
           return;
         }
-        markSpun();
+        markSpun(spunCustomerId);
         // Store result — animation loop picks it up at next frame boundary
         pendingResultRef.current = { winIndex: data.segmentIndex, data };
       })
