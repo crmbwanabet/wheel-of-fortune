@@ -6,9 +6,9 @@ import { reportError } from '@/lib/telemetry';
 import { waitUntil } from '@vercel/functions';
 
 // Reports whether the logged-in customer still has today's spin available.
-// Mirrors claim_spin's dedupe (customer id OR fingerprint) but read-only —
-// the atomic claim in /api/spin remains the source of truth, so this can
-// fail open on server errors without risking a double spin.
+// Dedupes on customer id only (read-only) — the atomic claim in /api/spin
+// remains the source of truth, so this can fail open on server errors
+// without risking a double spin.
 async function handleStatus(request) {
   // Kill-switch: return immediately without touching the DB (incident relief).
   if (process.env.SPIN_MAINTENANCE === '1') {
@@ -30,25 +30,20 @@ async function handleStatus(request) {
     return NextResponse.json({ available: false, error: code }, { status: 401 });
   }
 
-  // Fingerprint comes from the client; only trust it as a filter if it looks
-  // like our sha-256 hex fingerprints (guards the PostgREST .or() syntax).
-  const fingerprint =
-    typeof body.fingerprint === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(body.fingerprint)
-      ? body.fingerprint
-      : null;
-
   const dayDate = getWheelDayDate();
   const supabase = getSupabase();
 
-  let query = supabase
+  // Dedupe on the customer only — NOT the device fingerprint — so multiple
+  // accounts can share one computer. Anti-farming is handled by the deposit
+  // gate. `fingerprint` is still accepted (and logged at spin time) but no
+  // longer gates availability.
+  const query = supabase
     .from('wheel_spin_log')
     .select('customer_id')
     .eq('day_date', dayDate)
     .eq('test_bucket', '')
+    .eq('customer_id', customerId)
     .limit(1);
-  query = fingerprint
-    ? query.or(`customer_id.eq.${customerId},fingerprint.eq.${fingerprint}`)
-    : query.eq('customer_id', customerId);
 
   const { data, error } = await query;
   if (error) {
