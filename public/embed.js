@@ -71,16 +71,16 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch (e) { /* ignore */ }
   }
 
-  // Don't show if THIS account already spun today. If we can't read a token
-  // yet (SPA pre-login), fall through — the poll loop below waits for login.
-  var earlyToken = readValidToken();
-  if (earlyToken && hasSpunToday(customerIdFromToken(earlyToken))) return;
+  // Account the widget is currently built/keyed for. Mutable so the widget can
+  // be re-pointed when the logged-in account changes in place (SPA login).
+  var activeToken = null;
+  var activeCustomerId = null;
+  var widgetApi = null; // { reload, hideButton, closeWidget }, set by initWidget
 
   // Builds the trigger button + iframe overlay and wires up the auth handoff.
   // Runs at most once, only after we have a valid session token.
   var initialized = false;
-  function initWidget(authToken) {
-    var customerId = customerIdFromToken(authToken);
+  function initWidget() {
     if (initialized) return;
     initialized = true;
 
@@ -196,8 +196,8 @@
     // --- Auth handoff ---
     function sendAuth() {
       var iframe = overlay.querySelector('iframe');
-      if (iframe && iframe.contentWindow) {
-        iframe.contentWindow.postMessage({ type: 'bwanabet-auth', token: authToken }, WIDGET_ORIGIN);
+      if (iframe && iframe.contentWindow && activeToken) {
+        iframe.contentWindow.postMessage({ type: 'bwanabet-auth', token: activeToken }, WIDGET_ORIGIN);
       }
     }
 
@@ -215,6 +215,13 @@
       btn.style.display = 'none';
     }
 
+    // Expose the controls the account-watcher needs when re-keying in place.
+    widgetApi = {
+      reload: function () { var f = overlay.querySelector('iframe'); if (f) f.src = WIDGET_URL; },
+      hideButton: hideButton,
+      closeWidget: closeWidget,
+    };
+
     btn.addEventListener('click', openWidget);
 
     // --- Listen for messages from widget ---
@@ -229,7 +236,7 @@
         if (e.data.available) {
           btn.style.display = 'flex';
         } else {
-          markSpun(customerId); // remember server verdict so future page loads skip the iframe
+          markSpun(activeCustomerId); // remember server verdict so future page loads skip the iframe
           hideButton();
         }
       }
@@ -239,7 +246,7 @@
       }
 
       if (e.data.type === 'bwanabet-wheel-spun') {
-        markSpun(customerId);
+        markSpun(activeCustomerId);
         // Hide button after a short delay (let user see result first)
         setTimeout(function() {
           hideButton();
@@ -248,29 +255,40 @@
     });
   }
 
-  // Only show the wheel to logged-in BwanaBet users. The host may be a SPA
-  // (e.g. Angular) where login happens without a full page reload, so if the
-  // session cookie isn't present yet we poll for it rather than bailing for
-  // good. Once a valid token appears we initialise exactly once.
-  var initialToken = readValidToken();
-  if (initialToken) {
-    initWidget(initialToken);
-  } else {
-    var POLL_MS = 2000;
-    var MAX_WAIT_MS = 30 * 60 * 1000; // stop polling after 30 min with no login
-    var waited = 0;
-    var poll = setInterval(function () {
-      waited += POLL_MS;
-      // Waited long enough with no login — stop watching.
-      if (waited >= MAX_WAIT_MS) {
-        clearInterval(poll);
-        return;
-      }
-      var token = readValidToken();
-      if (token) {
-        clearInterval(poll);
-        initWidget(token);
-      }
-    }, POLL_MS);
+  // --- Account watcher ---------------------------------------------------
+  // Show the wheel for the logged-in BwanaBet user, and RE-KEY when the account
+  // changes in place — critical for shared store computers where people log in
+  // and out (SPA, no full page reload) on one browser. Polls the session cookie.
+  function syncToAccount(token) {
+    var id = customerIdFromToken(token);
+    if (!id || id === activeCustomerId) return; // no account change
+    activeToken = token;
+    activeCustomerId = id;
+    if (!initialized) {
+      if (hasSpunToday(id)) return;             // this account already spun; keep watching
+      initWidget();                             // build the widget once
+      // The freshly-mounted iframe posts 'bwanabet-wheel-ready' → sendAuth().
+    } else {
+      // Account switched in place: re-point auth and re-run availability.
+      widgetApi.closeWidget();
+      widgetApi.hideButton();
+      if (hasSpunToday(id)) return;             // new account already spun on this browser
+      widgetApi.reload();                       // re-mount iframe → ready → sendAuth(new token)
+    }
   }
+
+  function onLoggedOut() {
+    if (initialized) { widgetApi.closeWidget(); widgetApi.hideButton(); }
+    activeToken = null;
+    activeCustomerId = null;
+  }
+
+  var POLL_MS = 2000;
+  function tick() {
+    var token = readValidToken();
+    if (token) syncToAccount(token);
+    else if (activeCustomerId) onLoggedOut();
+  }
+  tick();                     // run immediately for an already-logged-in user
+  setInterval(tick, POLL_MS); // then watch for login / switch / logout
 })();
