@@ -37,26 +37,50 @@
     return catDate.toISOString().split('T')[0];
   }
 
-  function hasSpunToday() {
+  // Browser-safe decode of the session JWT payload id (keys the cache only).
+  function customerIdFromToken(raw) {
     try {
-      var stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) return false;
-      var data = JSON.parse(stored);
-      return data.day === getWheelDay();
-    } catch(e) { return false; }
+      var payload = JSON.parse(atob(raw.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return payload && payload.id != null && payload.id !== '' ? String(payload.id) : null;
+    } catch (e) { return null; }
   }
 
-  function markSpun() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ day: getWheelDay() }));
+  // Per-account "spun today" map: { "<customerId>": "<wheelDay>" }. Scoping by
+  // account (not device) lets multiple people share one computer.
+  function readSpunMap() {
+    try {
+      var m = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      return m && typeof m === 'object' ? m : {};
+    } catch (e) { return {}; }
   }
 
-  // Don't show if already spun today
-  if (hasSpunToday()) return;
+  function hasSpunToday(customerId) {
+    if (!customerId) return false;
+    return readSpunMap()[customerId] === getWheelDay();
+  }
+
+  function markSpun(customerId) {
+    if (!customerId) return;
+    var today = getWheelDay();
+    var map = readSpunMap();
+    var next = {};
+    for (var id in map) {
+      if (Object.prototype.hasOwnProperty.call(map, id) && map[id] === today) next[id] = map[id];
+    }
+    next[customerId] = today;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch (e) { /* ignore */ }
+  }
+
+  // Don't show if THIS account already spun today. If we can't read a token
+  // yet (SPA pre-login), fall through — the poll loop below waits for login.
+  var earlyToken = readValidToken();
+  if (earlyToken && hasSpunToday(customerIdFromToken(earlyToken))) return;
 
   // Builds the trigger button + iframe overlay and wires up the auth handoff.
   // Runs at most once, only after we have a valid session token.
   var initialized = false;
   function initWidget(authToken) {
+    var customerId = customerIdFromToken(authToken);
     if (initialized) return;
     initialized = true;
 
@@ -205,7 +229,7 @@
         if (e.data.available) {
           btn.style.display = 'flex';
         } else {
-          markSpun(); // remember server verdict so future page loads skip the iframe
+          markSpun(customerId); // remember server verdict so future page loads skip the iframe
           hideButton();
         }
       }
@@ -215,7 +239,7 @@
       }
 
       if (e.data.type === 'bwanabet-wheel-spun') {
-        markSpun();
+        markSpun(customerId);
         // Hide button after a short delay (let user see result first)
         setTimeout(function() {
           hideButton();
@@ -238,7 +262,7 @@
     var poll = setInterval(function () {
       waited += POLL_MS;
       // Spun on another tab, or we've waited long enough — stop watching.
-      if (hasSpunToday() || waited >= MAX_WAIT_MS) {
+      if (waited >= MAX_WAIT_MS) {
         clearInterval(poll);
         return;
       }
