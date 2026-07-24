@@ -261,7 +261,7 @@
     var waited = 0;
     var poll = setInterval(function () {
       waited += POLL_MS;
-      // Spun on another tab, or we've waited long enough — stop watching.
+      // Waited long enough with no login — stop watching.
       if (waited >= MAX_WAIT_MS) {
         clearInterval(poll);
         return;
