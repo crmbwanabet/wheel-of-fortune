@@ -333,6 +333,10 @@ export default function WheelWidget({ prefillUserId = null }) {
       if (!isAllowedAuthOrigin(e.origin)) return;
       if (e.data?.type === 'bwanabet-auth' && typeof e.data.token === 'string' && e.data.token) {
         authTokenRef.current = e.data.token;
+        // embed.js re-sends auth every time it re-opens the overlay (it reuses
+        // the SAME iframe, never reloading it). Un-latch a prior ✕-close here so
+        // re-opening shows the widget again instead of a blank iframe.
+        setClosed(false);
         resolveAvailability(e.data.token);
       }
     };
