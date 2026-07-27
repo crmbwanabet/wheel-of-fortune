@@ -24,6 +24,13 @@ const DEPOSIT_GATE_MODE = process.env.DEPOSIT_GATE_MODE || 'off';
 const DEPOSIT_CHECK_TIMEOUT_MS = Number(process.env.DEPOSIT_CHECK_TIMEOUT_MS) || 2000;
 const DEPOSIT_CHECK_BG_CAP_MS = Number(process.env.DEPOSIT_CHECK_BG_CAP_MS) || 10000;
 
+// Spin rate limit (per IP). Raised well above the old 5/min because many
+// legitimate customers share carrier-NAT / store IPs — per-customer abuse is
+// already prevented by daily dedup + the deposit gate, so this only guards
+// against a single IP flooding the DB. Env-tunable without a redeploy.
+const SPIN_RATE_LIMIT = Number(process.env.SPIN_RATE_LIMIT) || 60;
+const SPIN_RATE_WINDOW_SEC = Number(process.env.SPIN_RATE_WINDOW_SEC) || 60;
+
 async function handleSpin(request) {
   // Kill-switch: when set, return immediately WITHOUT touching the database.
   // Used to relieve DB connection pressure during an incident.
@@ -46,7 +53,7 @@ async function handleSpin(request) {
   const isTest = Boolean(serverToken && providedToken && providedToken === serverToken && body.test === true);
 
   // Authenticated test traffic bypasses the public rate limiter.
-  if (!isTest && !(await checkRateLimit('spin', ip))) {
+  if (!isTest && !(await checkRateLimit('spin', ip, SPIN_RATE_LIMIT, SPIN_RATE_WINDOW_SEC))) {
     return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
   }
 
