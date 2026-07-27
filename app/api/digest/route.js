@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
-import { getWheelDayDate } from '@/lib/algorithms';
+import { getWheelDayDate, WINNABLE_POSITIONS } from '@/lib/algorithms';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,20 +30,28 @@ async function handleDigest(request) {
     const supabase = getSupabase();
     const { data: state } = await supabase
       .from('wheel_daily_state')
-      .select('total_spins,total_wins,total_budget_spent')
+      .select('total_wins,total_budget_spent')
       .eq('day_date', day).eq('test_bucket', '').maybeSingle();
-    const { count: players } = await supabase
+    // Spin count = one row per spin. wheel_daily_state.total_spins is NOT
+    // maintained (would be a hot-row contention point); the row count / per-day
+    // sequence is the source of truth.
+    const { count: spinCount } = await supabase
       .from('wheel_spin_log')
-      .select('customer_id', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true })
       .eq('day_date', day).eq('test_bucket', '');
 
-    if (!state || state.total_spins === 0) {
+    const spins = spinCount ?? 0;
+    if (spins === 0) {
       text = `📊 Wheel daily digest — ${day}\nQuiet day: 0 spins.`;
     } else {
+      const beyond = Math.max(0, spins - WINNABLE_POSITIONS);
+      const spinsLine = beyond > 0
+        ? `Spins: ${spins} (first ${WINNABLE_POSITIONS} winnable, ${beyond} past cap)`
+        : `Spins: ${spins} / ${WINNABLE_POSITIONS} winnable`;
       text = [
         `📊 Wheel daily digest — ${day}`,
-        `Spins: ${state.total_spins} | Players: ${players ?? '—'}`,
-        `Wins: ${state.total_wins} → K${state.total_budget_spent} / K2,000 budget`,
+        spinsLine,
+        `Wins: ${state?.total_wins ?? 0} → K${state?.total_budget_spent ?? 0} / K2,000 budget`,
         `(errors delivered live; see alerts)`,
       ].join('\n');
     }

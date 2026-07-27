@@ -162,6 +162,7 @@ async function handleSpin(request) {
         prizeAmount: result.prize_amount,
         winsToday: result.wins_today,
         budgetSpent: result.budget_today,
+        spinNumber: result.spin_number,
       }).catch(err => console.error('[spin] Telegram notify failed:', err?.message))
     );
   }
