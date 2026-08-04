@@ -131,10 +131,17 @@ BEGIN
     ) INTO v_in_cooldown;
 
     IF v_in_cooldown THEN
-      -- Bank the prize for the next qualifying spinner instead of burning it.
-      UPDATE wheel_daily_state
-      SET carryover_prizes = carryover_prizes || to_jsonb(v_prize)
-      WHERE day_date = p_day AND test_bucket = p_bucket;
+      -- Bank the prize for the next qualifying spinner instead of burning it,
+      -- but ONLY an amount the segment mapping below can render. A forced test
+      -- prize (p_force_prize with p_skip_dedupe = false) could otherwise be
+      -- banked here and then raise 'Unknown prize amount' when a REAL spinner
+      -- pops it hours later — turning a test artefact into a 500 on a customer's
+      -- spin, far from its cause. An unrenderable amount is burned instead.
+      IF v_prize IN (10, 20, 50, 100, 200) THEN
+        UPDATE wheel_daily_state
+        SET carryover_prizes = carryover_prizes || to_jsonb(v_prize)
+        WHERE day_date = p_day AND test_bucket = p_bucket;
+      END IF;
       v_is_win := false;
       v_prize := NULL;
       v_cooldown_blocked := true;
