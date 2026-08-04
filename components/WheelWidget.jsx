@@ -353,7 +353,17 @@ export default function WheelWidget({ prefillUserId = null }) {
 
     const onMessage = (e) => {
       // Only trust a token from a known BwanaBet origin (or our own origin).
-      if (!isAllowedAuthOrigin(e.origin)) return;
+      if (!isAllowedAuthOrigin(e.origin)) {
+        // Silent rejection was a blind spot: an unrecognised host origin drops
+        // the token, so availability never resolves and the trigger button
+        // never appears. Only warn for auth attempts — unrelated scripts on the
+        // host page postMessage constantly and would drown this out.
+        if (e.data?.type === 'bwanabet-auth') {
+          console.warn('[wheel] auth token REJECTED from origin', e.origin,
+            '- add it to ALLOWED_AUTH_ORIGINS if this is a genuine BwanaBet host');
+        }
+        return;
+      }
       if (e.data?.type === 'bwanabet-auth' && typeof e.data.token === 'string' && e.data.token) {
         authTokenRef.current = e.data.token;
         // embed.js re-sends auth every time it re-opens the overlay (it reuses

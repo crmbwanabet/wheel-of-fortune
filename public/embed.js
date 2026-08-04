@@ -10,13 +10,32 @@
     try { return new URL(WIDGET_URL).origin; } catch (e) { return '*'; }
   })();
 
-  // Opt-in diagnostics. Set window.BWANABET_WHEEL_DEBUG = true in the console,
-  // then reload, to see exactly which gate stops the wheel from appearing.
-  // Inert (zero cost) unless the flag is set.
+  // Opt-in diagnostics: which gate is stopping the wheel from appearing?
+  // Turn on with EITHER of:
+  //   localStorage.setItem('BWANABET_WHEEL_DEBUG', '1')   <- survives reloads
+  //   ?wheelDebug=1 on the URL
+  // then reload. window.BWANABET_WHEEL_DEBUG also works as a live toggle, but a
+  // window global does NOT survive a reload, and the most useful lines (widget
+  // build, wheel-ready, availability) only ever fire once, at load.
+  function debugOn() {
+    try {
+      if (window.BWANABET_WHEEL_DEBUG) return true;
+      if (localStorage.getItem('BWANABET_WHEEL_DEBUG') === '1') return true;
+      return /[?&]wheelDebug=1/.test(location.search);
+    } catch (e) { return false; } // localStorage can throw in restricted contexts
+  }
+
+  // Consecutive duplicates are collapsed: tick() re-reads the cookie every 2s,
+  // so without this a logged-out user gets the same line 30x/minute and the
+  // once-per-load lines that identify the failing gate scroll out of view.
+  var lastDbg = '';
   function dbg() {
-    if (!window.BWANABET_WHEEL_DEBUG) return;
+    if (!debugOn()) return;
     try {
       var args = ['[wheel]'].concat(Array.prototype.slice.call(arguments));
+      var key = String(args);
+      if (key === lastDbg) return;
+      lastDbg = key;
       console.log.apply(console, args);
     } catch (e) { /* never break the host page */ }
   }
@@ -29,18 +48,20 @@
       if (!m) { dbg('no `token` cookie on', location.host, '- user is logged out, or the cookie is HttpOnly / on another domain'); return null; }
       var raw = decodeURIComponent(m[1]);
       var parts = raw.split('.');
-      if (parts.length !== 3) { dbg('token cookie is not a 3-part JWT'); return null; }
+      if (parts.length !== 3) { dbg('the `token` cookie is not a 3-part JWT - another app on this domain may be using the same cookie name'); return null; }
       var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
       if (!payload || typeof payload.exp !== 'number') { dbg('token has no numeric exp claim'); return null; }
       if (payload.exp * 1000 <= Date.now()) {
         // Printing both sides makes device clock skew obvious: if the device
         // clock runs ahead, a perfectly valid session reads as expired here.
-        dbg('token looks EXPIRED. exp=', new Date(payload.exp * 1000).toISOString(),
-            'device clock=', new Date().toISOString(),
-            '- if the device clock is wrong, fix the clock, not the wheel');
+        if (debugOn()) {
+          dbg('token looks EXPIRED. exp=', new Date(payload.exp * 1000).toISOString(),
+              'device clock=', new Date().toISOString(),
+              '- if the device clock is wrong, fix the clock, not the wheel');
+        }
         return null;
       }
-      dbg('valid token, expires', new Date(payload.exp * 1000).toISOString());
+      if (debugOn()) dbg('valid token, expires', new Date(payload.exp * 1000).toISOString());
       return raw;
     } catch (e) { dbg('token read threw:', e && e.message); return null; }
   }
@@ -206,6 +227,7 @@
     overlay.id = 'bwanabet-wheel-overlay';
     overlay.innerHTML = '<iframe src="' + WIDGET_URL + '" allow="autoplay"></iframe>';
     document.body.appendChild(overlay);
+    dbg('iframe created, waiting for wheel-ready');
 
     // Close on backdrop click
     overlay.addEventListener('click', function(e) {
@@ -217,6 +239,9 @@
       var iframe = overlay.querySelector('iframe');
       if (iframe && iframe.contentWindow && activeToken) {
         iframe.contentWindow.postMessage({ type: 'bwanabet-auth', token: activeToken }, WIDGET_ORIGIN);
+        dbg('auth sent to', WIDGET_ORIGIN);
+      } else {
+        dbg('auth NOT sent - iframe=', !!iframe, 'contentWindow=', !!(iframe && iframe.contentWindow), 'token=', !!activeToken);
       }
     }
 
@@ -253,7 +278,7 @@
       }
 
       if (e.data.type === 'bwanabet-wheel-available') {
-        dbg('availability verdict:', JSON.stringify(e.data));
+        dbg('availability verdict: available=', e.data.available, e.data);
         if (e.data.available) {
           btn.style.display = 'flex';
         } else {
@@ -288,7 +313,7 @@
     activeToken = token;
     activeCustomerId = id;
     if (!initialized) {
-      if (hasSpunToday(id)) { dbg('account', id, 'already spun on this browser today - wheel stays hidden until 06:00 CAT'); return; }
+      if (hasSpunToday(id)) { dbg('account', id, 'is cached as already-spun today - wheel stays hidden until 06:00 CAT. To clear: localStorage.removeItem("bwanabet_wheel_spun")'); return; }
       dbg('building widget for', id);
       initWidget();                             // build the widget once
       // The freshly-mounted iframe posts 'bwanabet-wheel-ready' → sendAuth().
@@ -297,12 +322,13 @@
       dbg('account switched in place - re-keying widget to', id);
       widgetApi.closeWidget();
       widgetApi.hideButton();
-      if (hasSpunToday(id)) { dbg('account', id, 'already spun on this browser today'); return; }
+      if (hasSpunToday(id)) { dbg('account', id, 'is cached as already-spun today - wheel stays hidden until 06:00 CAT. To clear: localStorage.removeItem("bwanabet_wheel_spun")'); return; }
       widgetApi.reload();                       // re-mount iframe → ready → sendAuth(new token)
     }
   }
 
   function onLoggedOut() {
+    dbg('session cookie gone - hiding wheel until next login');
     if (initialized) { widgetApi.closeWidget(); widgetApi.hideButton(); }
     activeToken = null;
     activeCustomerId = null;
