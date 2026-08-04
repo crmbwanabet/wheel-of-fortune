@@ -59,6 +59,13 @@ Ships first — it is what lets the team member's report actually be diagnosed.
 
 - [ ] **Step 1: Add the debug helper**
 
+> ⚠️ **SUPERSEDED — do not implement the block below as written.** A `window`
+> global does not survive a reload, so this version of the flag can never be on
+> when the once-per-load lines fire. The shipped implementation resolves the
+> flag from `localStorage` / `?wheelDebug=1` and collapses consecutive duplicate
+> lines. See Step 6's amendment note and the commit following `1c8b4ce`. The
+> block is kept here as the record of what was originally dispatched.
+
 At the top of the IIFE in `public/embed.js`, immediately after the `var WIDGET_ORIGIN = ...` block (around line 11), insert:
 
 ```javascript
@@ -202,7 +209,18 @@ Run the local dev server:
 npm run dev
 ```
 
-Open `http://localhost:3000/test.html` in a browser, run `window.BWANABET_WHEEL_DEBUG = true` in the console, reload, and confirm `[wheel]` lines appear tracing the gates. Expected: at minimum a line about the `token` cookie, since the local harness has no BwanaBet session.
+Open `http://localhost:3000/test.html?wheelDebug=1` in a browser and confirm `[wheel]` lines appear tracing the gates. Expected: at minimum a line about the `token` cookie, since the local harness has no BwanaBet session.
+
+> **Amended 2026-08-04 after code review.** This step originally said to run
+> `window.BWANABET_WHEEL_DEBUG = true` and reload. That cannot work — a window
+> global does not survive a reload, so the flag would read `undefined` and the
+> once-per-load lines (widget build, wheel-ready, availability verdict) would
+> never print. Worse, the 2s cookie poll would still emit the `token` line if
+> the flag were re-set after reloading, making this verification *look* like it
+> passed. Activation is now `localStorage.setItem('BWANABET_WHEEL_DEBUG','1')`
+> or `?wheelDebug=1`, both of which survive navigation. See commit following
+> `1c8b4ce` for the corrected `dbg`/`debugOn` implementation, which supersedes
+> the code block in Step 1 above.
 
 - [ ] **Step 7: Commit**
 
@@ -635,7 +653,7 @@ Then, at the very end of `initWidget` — after the `window.addEventListener('me
 
 - [ ] **Step 4: Verify manually**
 
-With `npm run dev` running, open `http://localhost:3000/test.html`, set `window.BWANABET_WHEEL_DEBUG = true`, reload, and confirm the `[wheel]` trace appears. To exercise the dead-iframe path, temporarily set `window.BWANABET_WIDGET_URL = 'https://blocked.invalid'` before the script loads and confirm the "never signalled ready" line appears after 8 seconds.
+With `npm run dev` running, open `http://localhost:3000/test.html?wheelDebug=1` and confirm the `[wheel]` trace appears. To exercise the dead-iframe path, temporarily set `window.BWANABET_WIDGET_URL = 'https://blocked.invalid'` before the script loads and confirm the "never signalled ready" line appears after 8 seconds.
 
 - [ ] **Step 5: Commit**
 
@@ -1478,7 +1496,24 @@ git commit -m "feat(digest): report cooldown blocks and prizes passed to other p
 
 **Deploy.** Push to `main`; Vercel deploys automatically. Set `SPIN_COOLDOWN_DAYS=3` in the Vercel project environment (the code defaults to 3 if unset, so this is documentation rather than a requirement).
 
-**Diagnose the original report.** Ask the team member to open the BwanaBet site, run `window.BWANABET_WHEEL_DEBUG = true` in the console, reload, and send the `[wheel]` lines. The trace names the failing gate directly.
+**Diagnose the original report.** Ask the team member to open the BwanaBet site, paste this into the browser console, then reload and send the `[wheel]` lines:
+
+```javascript
+localStorage.setItem('BWANABET_WHEEL_DEBUG', '1')
+```
+
+The trace names the failing gate directly. Reading it:
+
+| Trace ends at | Cause | Next step |
+| --- | --- | --- |
+| `no \`token\` cookie` | Logged out, or session is on the other domain | Log in on the domain they are actually browsing |
+| `token looks EXPIRED` + device clock far from `exp` | Device clock skew | Fix the device clock |
+| `is cached as already-spun today` | Already spun (or a cached server verdict) | `localStorage.removeItem('bwanabet_wheel_spun')` to re-test |
+| `iframe created, waiting for wheel-ready` then silence | Ad-blocker, DNS filter, or the iframe failed to load | Disable blockers and retry; check `wheel_error_log` for `widget_never_ready` |
+| `auth NOT sent` | Iframe present but not reachable, or no token | Report the flags shown on that line |
+| Nothing at all | `embed.js` did not load on that page | Confirm the script tag is present on the page they are on |
+
+Tell them to disable the flag afterwards with `localStorage.removeItem('BWANABET_WHEEL_DEBUG')`.
 
 **Hand to the web team** (outside this repo): `www.bwanabet.co.zm` returns a bare 404 and needs a 301 to the apex domain.
 

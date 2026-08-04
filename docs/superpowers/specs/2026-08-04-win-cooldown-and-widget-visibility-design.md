@@ -122,8 +122,19 @@ Plus three genuine bugs:
 
 ### 4.1 W1 — Diagnostics (ship first)
 
-`embed.js` gains an opt-in debug mode via `window.BWANABET_WHEEL_DEBUG = true`,
-logging each gate in order with a `[wheel]` prefix:
+`embed.js` gains an opt-in debug mode, enabled by either
+`localStorage.setItem('BWANABET_WHEEL_DEBUG', '1')` or a `?wheelDebug=1` query
+parameter, logging each gate in order with a `[wheel]` prefix.
+
+Both activation routes must survive a reload. A `window` global does not — and
+most of the trace (widget build, wheel-ready, availability verdict) fires only
+once, at load, so a flag set after reloading would miss exactly the gates worth
+seeing. `window.BWANABET_WHEEL_DEBUG` is still honoured as a live toggle for the
+2s cookie poll. Consecutive duplicate lines are collapsed, because that poll
+would otherwise repeat the same line 30×/minute and scroll the once-per-load
+lines out of view.
+
+The gates logged, in order:
 
 ```
 cookie present → token parsed → exp vs local clock (both printed)
