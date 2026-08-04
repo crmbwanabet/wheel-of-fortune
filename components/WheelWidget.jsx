@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { generateFingerprint } from '@/lib/fingerprint';
 import { hasSpun, withSpun } from '@/lib/spunCache.mjs';
+import { decideAvailability } from '@/lib/availability.mjs';
 
 // ============================================================================
 // DATA — 10 segments: K10, K20, K50, K100, K200, Try Again Tomorrow ×5
@@ -53,6 +54,11 @@ function isAllowedAuthOrigin(origin) {
 // LOCALSTORAGE — 6am CAT reset
 // ============================================================================
 const STORAGE_KEY = 'bwanabet_wheel_spin';
+
+// Availability check timeout. Without this a HANG (as opposed to an error)
+// means the widget never posts a verdict and the trigger button never appears
+// until a full page reload — the `checked` latch prevents any retry.
+const STATUS_TIMEOUT_MS = 4000;
 
 function getWheelDayClient() {
   const now = new Date();
@@ -327,28 +333,43 @@ export default function WheelWidget({ prefillUserId = null }) {
 
       const customerId = customerIdFromToken(token);
       let available = !hasSpunToday(customerId);
+      let sticky = available ? false : true; // local cache hit IS a real already-spun
+
       if (available) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), STATUS_TIMEOUT_MS);
         try {
           const fp = await fpPromise;
           const res = await fetch('/api/spin-status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token, fingerprint: fp }),
+            signal: controller.signal,
           });
-          const data = await res.json();
-          available = data.available !== false;
+          const body = await res.json().catch(() => null);
+          const verdict = decideAvailability({ status: res.status, body });
+          available = verdict.available;
+          sticky = verdict.sticky;
         } catch {
-          // Fail open — /api/spin still enforces the daily claim atomically.
+          // Timeout or network error — fail open. /api/spin still enforces the
+          // daily claim atomically, so this cannot produce a double spin.
+          available = true;
+          sticky = false;
+        } finally {
+          clearTimeout(timer);
         }
       }
 
       if (available) {
         setScreen('prompt');
       } else {
-        markSpun(customerId); // sync localStorage so future page loads skip the check
+        // Only persist a verdict that genuinely means "you already spun today".
+        // Maintenance mode and auth failures are transient and must not suppress
+        // the wheel for the rest of the wheel-day.
+        if (sticky) markSpun(customerId);
         setScreen('done');
       }
-      window.parent.postMessage({ type: 'bwanabet-wheel-available', available }, '*');
+      window.parent.postMessage({ type: 'bwanabet-wheel-available', available, sticky }, '*');
     };
 
     const onMessage = (e) => {
