@@ -2,19 +2,24 @@
 // dedicated test_bucket. Writes ~15 rows. NOT a load test — the production DB
 // is shared with the CRM (see the 2026-07-13 incident).
 //
-// Usage:  node scripts/cooldown-verify.mjs
-// Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local.
+// Usage:  node --env-file=.env.local scripts/cooldown-verify.mjs
+//
+// Uses Node's built-in --env-file rather than parsing .env.local by hand:
+// that file has mixed CRLF/LF line endings, and a naive /^([A-Z_]+)=(.*)$/
+// silently fails to match the CRLF lines entirely (`.` does not match `\r`),
+// leaving the credentials undefined. Matches scripts/concurrency-verify.mjs.
 
-import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { shiftWheelDay } from '../lib/cooldown.js';
 
-for (const line of readFileSync(new URL('../.env.local', import.meta.url), 'utf8').split('\n')) {
-  const m = line.match(/^([A-Z_]+)=(.*)$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
+const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.');
+  console.error('Run with: node --env-file=.env.local scripts/cooldown-verify.mjs');
+  process.exit(1);
 }
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
 
