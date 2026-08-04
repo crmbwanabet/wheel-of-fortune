@@ -339,10 +339,15 @@
           // widget computing this verdict and us handling the message; caching
           // it against the wrong customer would cost them their spin. The
           // missing-customerId clause keeps a cached older widget working.
-          if (e.data.sticky && (!e.data.customerId || e.data.customerId === activeCustomerId)) {
+          var idMatches = !e.data.customerId || e.data.customerId === activeCustomerId;
+          if (e.data.sticky && idMatches) {
             markSpun(activeCustomerId);
+          } else if (!e.data.sticky) {
+            dbg('unavailable but NOT sticky - not caching; the next page load will retry');
+          } else {
+            dbg('sticky verdict was for account', e.data.customerId,
+                'but the active account is now', activeCustomerId, '- not caching');
           }
-          else dbg('unavailable but NOT sticky - not caching; the next page load will retry');
           hideButton();
         }
       }
