@@ -18,17 +18,22 @@
   // window global does NOT survive a reload, and the most useful lines (widget
   // build, wheel-ready, availability) only ever fire once, at load.
   function debugOn() {
+    if (window.BWANABET_WHEEL_DEBUG) return true;
+    // URL param BEFORE storage: it is the fallback for contexts where
+    // localStorage throws (Safari with storage blocked, partitioned
+    // third-party frames), so reading storage first makes it unreachable
+    // exactly when it is needed. Neither of these two can throw.
+    if (/[?&]wheelDebug=1/.test(location.search)) return true;
     try {
-      if (window.BWANABET_WHEEL_DEBUG) return true;
-      if (localStorage.getItem('BWANABET_WHEEL_DEBUG') === '1') return true;
-      return /[?&]wheelDebug=1/.test(location.search);
-    } catch (e) { return false; } // localStorage can throw in restricted contexts
+      return localStorage.getItem('BWANABET_WHEEL_DEBUG') === '1';
+    } catch (e) { return false; }
   }
 
   // Consecutive duplicates are collapsed: tick() re-reads the cookie every 2s,
   // so without this a logged-out user gets the same line 30x/minute and the
   // once-per-load lines that identify the failing gate scroll out of view.
   var lastDbg = '';
+  var loggedExpiryFor = 0;
   function dbg() {
     if (!debugOn()) return;
     try {
@@ -54,7 +59,12 @@
       if (payload.exp * 1000 <= Date.now()) {
         // Printing both sides makes device clock skew obvious: if the device
         // clock runs ahead, a perfectly valid session reads as expired here.
-        if (debugOn()) {
+        // Deduped on the token's own exp, NOT on the message text: the message
+        // embeds the live device clock, so a text-keyed dedupe differs every
+        // 2s tick and floods the console in precisely the clock-skew case this
+        // line was written to diagnose.
+        if (debugOn() && loggedExpiryFor !== payload.exp) {
+          loggedExpiryFor = payload.exp;
           dbg('token looks EXPIRED. exp=', new Date(payload.exp * 1000).toISOString(),
               'device clock=', new Date().toISOString(),
               '- if the device clock is wrong, fix the clock, not the wheel');
@@ -278,7 +288,8 @@
       }
 
       if (e.data.type === 'bwanabet-wheel-available') {
-        dbg('availability verdict: available=', e.data.available, e.data);
+        dbg('availability verdict: available=', e.data.available,
+            'sticky=', e.data.sticky, 'reason=', e.data.reason, e.data);
         if (e.data.available) {
           btn.style.display = 'flex';
         } else {
