@@ -6,6 +6,12 @@
   if (window.BWANABET_WIDGET_URL) WIDGET_URL = window.BWANABET_WIDGET_URL;
   var STORAGE_KEY = 'bwanabet_wheel_spun';
 
+  // If the widget iframe never signals ready within this window it was almost
+  // certainly blocked (ad-blocker, DNS filter) or failed to load. We report it
+  // so the failure is measurable instead of silent. The button deliberately
+  // stays hidden — a button that opens a blank overlay is worse than none.
+  var READY_TIMEOUT_MS = 8000;
+
   var WIDGET_ORIGIN = (function () {
     try { return new URL(WIDGET_URL).origin; } catch (e) { return '*'; }
   })();
@@ -133,6 +139,7 @@
   function initWidget() {
     if (initialized) return;
     initialized = true;
+    var readySeen = false;
 
     // --- Create floating trigger button ---
     var btn = document.createElement('div');
@@ -283,6 +290,7 @@
       if (!e.data || !e.data.type) return;
 
       if (e.data.type === 'bwanabet-wheel-ready') {
+        readySeen = true;
         dbg('widget signalled ready - sending auth');
         sendAuth();
       }
@@ -293,7 +301,11 @@
         if (e.data.available) {
           btn.style.display = 'flex';
         } else {
-          markSpun(activeCustomerId); // remember server verdict so future page loads skip the iframe
+          // Persist ONLY a genuine already-spun verdict. Maintenance mode and
+          // expired tokens used to be cached here, which suppressed the wheel
+          // for the whole wheel-day and stopped later page loads retrying.
+          if (e.data.sticky) markSpun(activeCustomerId);
+          else dbg('unavailable but NOT sticky - not caching; the next page load will retry');
           hideButton();
         }
       }
@@ -310,6 +322,32 @@
         }, 2000);
       }
     });
+
+    // Report a widget that never came alive. Sent as a text/plain beacon so it
+    // is a CORS "simple request": no preflight, and no server changes needed
+    // (/api/telemetry reads the raw body and JSON-parses it).
+    setTimeout(function () {
+      if (readySeen) return;
+      dbg('widget never signalled ready within', READY_TIMEOUT_MS, 'ms - iframe blocked or failed to load');
+      try {
+        var payload = JSON.stringify({
+          type: 'widget_never_ready',
+          message: 'no bwanabet-wheel-ready within ' + READY_TIMEOUT_MS + 'ms',
+          context: location.host,
+        });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(WIDGET_URL + '/api/telemetry', new Blob([payload], { type: 'text/plain' }));
+        } else {
+          fetch(WIDGET_URL + '/api/telemetry', {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: payload,
+            keepalive: true,
+          }).catch(function () {});
+        }
+      } catch (e) { /* never break the host page */ }
+    }, READY_TIMEOUT_MS);
   }
 
   // --- Account watcher ---------------------------------------------------
