@@ -813,7 +813,8 @@ export function blocksSpin(winDay, spinDay, cooldownDays) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `node --test lib/cooldown.test.mjs`
-Expected: PASS, 12 tests
+Expected: PASS, 11 tests (the test file above contains 11 `test()` blocks — an
+earlier revision of this plan said 12, which was an arithmetic slip)
 
 - [ ] **Step 5: Commit**
 
@@ -1481,7 +1482,8 @@ Expected: `{"ok":true}`, and a digest message arrives in the alert Telegram chat
 npm test
 ```
 
-Expected: `pass 91` (71 baseline + 8 from Task 2 + 12 from Task 6), `fail 0`.
+Expected: `pass 94`, `fail 0` — 71 baseline + 12 from Task 2 (8 as planned, plus
+4 added during code review) + 11 from Task 6.
 
 - [ ] **Step 6: Commit**
 
