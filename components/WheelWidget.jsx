@@ -34,6 +34,11 @@ const SEG_ANGLE = 360 / NUM;
 const ALLOWED_AUTH_ORIGINS = new Set([
   'https://bwanabet.com',
   'https://bwanabet.co.zm',
+  // `www.` variants: www.bwanabet.com currently 301s to the apex and
+  // www.bwanabet.co.zm 404s, but if either ever serves the site directly the
+  // token would be silently dropped and the wheel would never appear.
+  'https://www.bwanabet.com',
+  'https://www.bwanabet.co.zm',
   // TEMPORARY (2026-07-21): BwanaBet dev environment for pre-launch widget
   // testing. Remove once the team confirms testing is done.
   'https://dev-bwanabet.energaming.services',

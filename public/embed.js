@@ -10,20 +10,39 @@
     try { return new URL(WIDGET_URL).origin; } catch (e) { return '*'; }
   })();
 
+  // Opt-in diagnostics. Set window.BWANABET_WHEEL_DEBUG = true in the console,
+  // then reload, to see exactly which gate stops the wheel from appearing.
+  // Inert (zero cost) unless the flag is set.
+  function dbg() {
+    if (!window.BWANABET_WHEEL_DEBUG) return;
+    try {
+      var args = ['[wheel]'].concat(Array.prototype.slice.call(arguments));
+      console.log.apply(console, args);
+    } catch (e) { /* never break the host page */ }
+  }
+
   // Read the BwanaBet session cookie and return the raw JWT only if it is
   // present and not expired. Decode-only (matches server Phase 1). Returns null otherwise.
   function readValidToken() {
     try {
       var m = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
-      if (!m) return null;
+      if (!m) { dbg('no `token` cookie on', location.host, '- user is logged out, or the cookie is HttpOnly / on another domain'); return null; }
       var raw = decodeURIComponent(m[1]);
       var parts = raw.split('.');
-      if (parts.length !== 3) return null;
+      if (parts.length !== 3) { dbg('token cookie is not a 3-part JWT'); return null; }
       var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-      if (!payload || typeof payload.exp !== 'number') return null;
-      if (payload.exp * 1000 <= Date.now()) return null;
+      if (!payload || typeof payload.exp !== 'number') { dbg('token has no numeric exp claim'); return null; }
+      if (payload.exp * 1000 <= Date.now()) {
+        // Printing both sides makes device clock skew obvious: if the device
+        // clock runs ahead, a perfectly valid session reads as expired here.
+        dbg('token looks EXPIRED. exp=', new Date(payload.exp * 1000).toISOString(),
+            'device clock=', new Date().toISOString(),
+            '- if the device clock is wrong, fix the clock, not the wheel');
+        return null;
+      }
+      dbg('valid token, expires', new Date(payload.exp * 1000).toISOString());
       return raw;
-    } catch (e) { return null; }
+    } catch (e) { dbg('token read threw:', e && e.message); return null; }
   }
 
   // --- Day calculation (CAT = UTC+2, resets at 06:00 CAT = 04:00 UTC) ---
@@ -229,10 +248,12 @@
       if (!e.data || !e.data.type) return;
 
       if (e.data.type === 'bwanabet-wheel-ready') {
+        dbg('widget signalled ready - sending auth');
         sendAuth();
       }
 
       if (e.data.type === 'bwanabet-wheel-available') {
+        dbg('availability verdict:', JSON.stringify(e.data));
         if (e.data.available) {
           btn.style.display = 'flex';
         } else {
@@ -261,18 +282,22 @@
   // and out (SPA, no full page reload) on one browser. Polls the session cookie.
   function syncToAccount(token) {
     var id = customerIdFromToken(token);
-    if (!id || id === activeCustomerId) return; // no account change
+    if (!id) { dbg('token has no `id` claim - cannot key the wheel to an account'); return; }
+    if (id === activeCustomerId) return; // no account change
+    dbg('active account is now', id);
     activeToken = token;
     activeCustomerId = id;
     if (!initialized) {
-      if (hasSpunToday(id)) return;             // this account already spun; keep watching
+      if (hasSpunToday(id)) { dbg('account', id, 'already spun on this browser today - wheel stays hidden until 06:00 CAT'); return; }
+      dbg('building widget for', id);
       initWidget();                             // build the widget once
       // The freshly-mounted iframe posts 'bwanabet-wheel-ready' → sendAuth().
     } else {
       // Account switched in place: re-point auth and re-run availability.
+      dbg('account switched in place - re-keying widget to', id);
       widgetApi.closeWidget();
       widgetApi.hideButton();
-      if (hasSpunToday(id)) return;             // new account already spun on this browser
+      if (hasSpunToday(id)) { dbg('account', id, 'already spun on this browser today'); return; }
       widgetApi.reload();                       // re-mount iframe → ready → sendAuth(new token)
     }
   }
