@@ -39,6 +39,14 @@ async function handleDigest(request) {
       .from('wheel_spin_log')
       .select('id', { count: 'exact', head: true })
       .eq('day_date', day).eq('test_bucket', '');
+    const { count: cooldownBlocked } = await supabase
+      .from('wheel_spin_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('day_date', day).eq('test_bucket', '').eq('cooldown_blocked', true);
+    const { count: carryoverAwarded } = await supabase
+      .from('wheel_spin_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('day_date', day).eq('test_bucket', '').eq('carryover_awarded', true);
 
     const spins = spinCount ?? 0;
     if (spins === 0) {
@@ -48,12 +56,20 @@ async function handleDigest(request) {
       const spinsLine = beyond > 0
         ? `Spins: ${spins} (first ${WINNABLE_POSITIONS} winnable, ${beyond} past cap)`
         : `Spins: ${spins} / ${WINNABLE_POSITIONS} winnable`;
-      text = [
+      const blocked = cooldownBlocked ?? 0;
+      const passedOn = carryoverAwarded ?? 0;
+      const lines = [
         `📊 Wheel daily digest — ${day}`,
         spinsLine,
         `Wins: ${state?.total_wins ?? 0} → K${state?.total_budget_spent ?? 0} / K2,000 budget`,
-        `(errors delivered live; see alerts)`,
-      ].join('\n');
+      ];
+      // Only mention the cooldown on days it actually fired — it blocks roughly
+      // 0–1 wins/day, so a permanent "0 blocked" line would be noise.
+      if (blocked > 0 || passedOn > 0) {
+        lines.push(`Cooldown: ${blocked} blocked → ${passedOn} passed to other players`);
+      }
+      lines.push(`(errors delivered live; see alerts)`);
+      text = lines.join('\n');
     }
   } catch (err) {
     text = `📊 Wheel daily digest — ${day}\n⚠️ digest read failed: ${(err && err.message) || 'error'}`;
