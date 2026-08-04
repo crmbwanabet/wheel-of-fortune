@@ -19,7 +19,7 @@ async function handleStatus(request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+    return NextResponse.json({ error: 'invalid_body', reason: 'invalid_body' }, { status: 400 });
   }
 
   let customerId;

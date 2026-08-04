@@ -58,6 +58,9 @@ const STORAGE_KEY = 'bwanabet_wheel_spin';
 // Availability check timeout. Without this a HANG (as opposed to an error)
 // means the widget never posts a verdict and the trigger button never appears
 // until a full page reload — the `checked` latch prevents any retry.
+// Note the budget starts before `await fpPromise`, so it nominally covers
+// fingerprint generation too — in practice that promise starts at mount and has
+// long settled by the time an auth token arrives.
 const STATUS_TIMEOUT_MS = 4000;
 
 function getWheelDayClient() {
@@ -333,7 +336,10 @@ export default function WheelWidget({ prefillUserId = null }) {
 
       const customerId = customerIdFromToken(token);
       let available = !hasSpunToday(customerId);
-      let sticky = available ? false : true; // local cache hit IS a real already-spun
+      // The widget's own cache is only ever written for a genuine already-spun
+      // (below, and on a real /api/spin result), so a hit here is authoritative
+      // and never transient. That invariant is what makes this line correct.
+      let sticky = !available;
 
       if (available) {
         const controller = new AbortController();
@@ -369,7 +375,7 @@ export default function WheelWidget({ prefillUserId = null }) {
         if (sticky) markSpun(customerId);
         setScreen('done');
       }
-      window.parent.postMessage({ type: 'bwanabet-wheel-available', available, sticky }, '*');
+      window.parent.postMessage({ type: 'bwanabet-wheel-available', available, sticky, customerId }, '*');
     };
 
     const onMessage = (e) => {

@@ -6,11 +6,16 @@
   if (window.BWANABET_WIDGET_URL) WIDGET_URL = window.BWANABET_WIDGET_URL;
   var STORAGE_KEY = 'bwanabet_wheel_spun';
 
-  // If the widget iframe never signals ready within this window it was almost
-  // certainly blocked (ad-blocker, DNS filter) or failed to load. We report it
-  // so the failure is measurable instead of silent. The button deliberately
-  // stays hidden — a button that opens a blank overlay is worse than none.
-  var READY_TIMEOUT_MS = 8000;
+  // How long to wait for the widget iframe to signal ready before reporting it
+  // as dead. Generous on purpose: the iframe is display:none (deprioritised by
+  // browsers) and has to load and hydrate a Next.js app over a mobile network.
+  //
+  // Note what this can and cannot see: the beacon posts to the SAME origin as
+  // the iframe, so if that origin is blocked (ad-blocker, DNS filter) the report
+  // is blocked too. What this actually captures is CSP frame-ancestors
+  // rejections, widget JS errors, and genuinely slow loads. The button stays
+  // hidden either way — a button opening a blank overlay is worse than none.
+  var READY_TIMEOUT_MS = 15000;
 
   var WIDGET_ORIGIN = (function () {
     try { return new URL(WIDGET_URL).origin; } catch (e) { return '*'; }
@@ -127,6 +132,16 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch (e) { /* ignore */ }
   }
 
+  // One dead-widget report per browser per wheel-day. See the beacon below for
+  // why this is bounded so aggressively.
+  var REPORT_KEY = 'bwanabet_wheel_reported';
+  function reportedToday() {
+    try { return localStorage.getItem(REPORT_KEY) === getWheelDay(); } catch (e) { return false; }
+  }
+  function markReported() {
+    try { localStorage.setItem(REPORT_KEY, getWheelDay()); } catch (e) { /* ignore */ }
+  }
+
   // Account the widget is currently built/keyed for. Mutable so the widget can
   // be re-pointed when the logged-in account changes in place (SPA login).
   var activeToken = null;
@@ -140,6 +155,7 @@
     if (initialized) return;
     initialized = true;
     var readySeen = false;
+    var loadSeen = false;
 
     // --- Create floating trigger button ---
     var btn = document.createElement('div');
@@ -246,6 +262,14 @@
     document.body.appendChild(overlay);
     dbg('iframe created, waiting for wheel-ready');
 
+    var overlayFrame = overlay.querySelector('iframe');
+    if (overlayFrame) {
+      overlayFrame.addEventListener('load', function () {
+        loadSeen = true;
+        dbg('iframe fired load');
+      });
+    }
+
     // Close on backdrop click
     overlay.addEventListener('click', function(e) {
       if (e.target === overlay) closeWidget();
@@ -287,6 +311,12 @@
 
     // --- Listen for messages from widget ---
     window.addEventListener('message', function(e) {
+      // Only trust messages from our own widget iframe. The host page runs
+      // third-party scripts, and a forged 'available' verdict below would
+      // suppress this customer's wheel for the whole wheel-day. WIDGET_ORIGIN
+      // falls back to '*' only when new URL(WIDGET_URL) threw — keep that path
+      // permissive rather than breaking the widget entirely.
+      if (WIDGET_ORIGIN !== '*' && e.origin !== WIDGET_ORIGIN) return;
       if (!e.data || !e.data.type) return;
 
       if (e.data.type === 'bwanabet-wheel-ready') {
@@ -304,7 +334,14 @@
           // Persist ONLY a genuine already-spun verdict. Maintenance mode and
           // expired tokens used to be cached here, which suppressed the wheel
           // for the whole wheel-day and stopped later page loads retrying.
-          if (e.data.sticky) markSpun(activeCustomerId);
+          // Only cache when the verdict is for the account we currently hold.
+          // On a shared computer the logged-in account can change between the
+          // widget computing this verdict and us handling the message; caching
+          // it against the wrong customer would cost them their spin. The
+          // missing-customerId clause keeps a cached older widget working.
+          if (e.data.sticky && (!e.data.customerId || e.data.customerId === activeCustomerId)) {
+            markSpun(activeCustomerId);
+          }
           else dbg('unavailable but NOT sticky - not caching; the next page load will retry');
           hideButton();
         }
@@ -328,17 +365,25 @@
     // (/api/telemetry reads the raw body and JSON-parses it).
     setTimeout(function () {
       if (readySeen) return;
+      // Bounded on purpose. /api/telemetry's rate limiter is Supabase-backed and
+      // fails open, so EVERY report costs a round-trip to the shared CRM database
+      // before any dedup. Unbounded, a widespread widget failure would turn this
+      // reporting path into database load during exactly the incident it reports.
+      // One report per browser per wheel-day, sampled at 5%. Read the resulting
+      // counts as a boolean signal ("is this happening?"), never as a rate.
+      if (reportedToday() || Math.random() >= 0.05) return;
+      markReported();
       dbg('widget never signalled ready within', READY_TIMEOUT_MS, 'ms - iframe blocked or failed to load');
       try {
         var payload = JSON.stringify({
           type: 'widget_never_ready',
-          message: 'no bwanabet-wheel-ready within ' + READY_TIMEOUT_MS + 'ms',
+          message: 'no bwanabet-wheel-ready within ' + READY_TIMEOUT_MS + 'ms (iframe load event ' + (loadSeen ? 'fired' : 'never fired') + ')',
           context: location.host,
         });
         if (navigator.sendBeacon) {
-          navigator.sendBeacon(WIDGET_URL + '/api/telemetry', new Blob([payload], { type: 'text/plain' }));
+          navigator.sendBeacon(WIDGET_ORIGIN + '/api/telemetry', new Blob([payload], { type: 'text/plain' }));
         } else {
-          fetch(WIDGET_URL + '/api/telemetry', {
+          fetch(WIDGET_ORIGIN + '/api/telemetry', {
             method: 'POST',
             mode: 'no-cors',
             headers: { 'Content-Type': 'text/plain' },
