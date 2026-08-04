@@ -153,10 +153,18 @@ Separately, flag to the web team (outside this repo):
 
 ### 4.2 W2 — Stop transient failures becoming sticky
 
-- `/api/spin-status` returns a `reason` field: `already_spun` | `maintenance` |
-  `token_expired` | `invalid_token` | `error`.
+- `/api/spin-status` returns a `reason` field on **every** path:
+  `available` | `already_spun` | `maintenance` | `token_expired` |
+  `invalid_token` | `check_failed`. (`check_failed` covers both the DB-query
+  error and the outer catch — both of which fail open.)
+- The client helper may additionally synthesise `unreadable` (body absent, or
+  not a JSON object), `unauthenticated` (a 401 carrying neither `reason` nor
+  `error`) and `unknown` (`available:false` with no reason, e.g. a stale
+  deploy). None of these are sticky.
 - The widget posts `{ type: 'bwanabet-wheel-available', available, sticky }`,
-  where `sticky` is true **only** for `reason === 'already_spun'`.
+  where `sticky` is true **only** for `reason === 'already_spun'` **on an HTTP
+  200**. Stickiness is irreversible for the rest of the wheel-day, so no error
+  response or intermediary may mint one, even if it echoes a sticky reason.
 - `embed.js` calls `markSpun()` only when `sticky` is true. Every other
   `available:false` hides the button for this page load without writing
   localStorage, so the next page load retries.
