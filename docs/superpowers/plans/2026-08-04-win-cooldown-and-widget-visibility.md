@@ -1244,7 +1244,7 @@ Create `scripts/cooldown-verify.mjs`:
 // dedicated test_bucket. Writes ~15 rows. NOT a load test — the production DB
 // is shared with the CRM (see the 2026-07-13 incident).
 //
-// Usage:  node scripts/cooldown-verify.mjs
+// Usage:  node --env-file=.env.local scripts/cooldown-verify.mjs
 // Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local.
 
 import { readFileSync } from 'node:fs';
@@ -1371,7 +1371,7 @@ main().catch(async (err) => {
 - [ ] **Step 2: Run it before the migration to confirm it fails**
 
 ```bash
-node scripts/cooldown-verify.mjs
+node --env-file=.env.local scripts/cooldown-verify.mjs
 ```
 
 Expected: exits 1 with `verification threw: claim_spin failed: ...` naming the missing
@@ -1386,7 +1386,7 @@ Apply `supabase/migrations/2026-08-04-win-cooldown-rpc.sql` as **one statement b
 - [ ] **Step 4: Run the verification**
 
 ```bash
-node scripts/cooldown-verify.mjs
+node --env-file=.env.local scripts/cooldown-verify.mjs
 ```
 
 Expected: every line reads `PASS`, final line `ALL CHECKS PASSED`, exit code 0.
