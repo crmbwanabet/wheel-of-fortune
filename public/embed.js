@@ -24,7 +24,7 @@
   // like it belongs to them — anything louder reads as a third-party advert.
   var PROMO_TEXT = 'CONGRATULATIONS! YOU GET FREE BONUS!';
   var PROMO_DELAY_MS = 1500;    // after the trigger button becomes visible
-  var PROMO_VISIBLE_MS = 12000;
+  var PROMO_VISIBLE_MS = 5000;  // then it fades out on its own
   var PROMO_KEY = 'bwanabet_wheel_promo';
 
   var WIDGET_ORIGIN = (function () {
