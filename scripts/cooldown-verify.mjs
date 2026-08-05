@@ -35,9 +35,9 @@ function check(label, actual, expected) {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}` + (ok ? '' : `\n        expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`));
 }
 
-async function spin(customer, { eligible = true, forcePrize = null } = {}) {
+async function spin(customer, { eligible = true, forcePrize = null, day = DAY } = {}) {
   const { data, error } = await supabase.rpc('claim_spin', {
-    p_day: DAY,
+    p_day: day,
     p_bucket: BUCKET,
     p_customer: customer,
     p_fingerprint: null,
@@ -53,12 +53,20 @@ async function spin(customer, { eligible = true, forcePrize = null } = {}) {
   return data;
 }
 
-async function queue() {
+async function queue(day = DAY) {
   const { data } = await supabase
     .from('wheel_daily_state')
     .select('carryover_prizes')
-    .eq('day_date', DAY).eq('test_bucket', BUCKET).maybeSingle();
+    .eq('day_date', day).eq('test_bucket', BUCKET).maybeSingle();
   return data ? data.carryover_prizes : null;
+}
+
+async function carriedIn(day) {
+  const { data } = await supabase
+    .from('wheel_daily_state')
+    .select('carryover_in')
+    .eq('day_date', day).eq('test_bucket', BUCKET).maybeSingle();
+  return data ? data.carryover_in : null;
 }
 
 async function seedWin(customer, day, prize) {
@@ -117,6 +125,37 @@ async function main() {
   const awarded = [a, b].filter((r) => r.carryover_awarded).length;
   check('exactly one racer collects the single queued prize', awarded, 1);
   check('queue is drained after the race', await queue(), []);
+
+  // 7. Carry-forward: a prize left queued when the wheel-day ends must move
+  //    into the next day rather than being orphaned. This is the whole point of
+  //    the 2026-08-05 migration — before it, the prize below was lost at reset.
+  await seedWin('cf-recent', PREV, 200);
+  await spin('cf-recent', { forcePrize: 200 });
+  check('prize is queued on the closing day', await queue(DAY), [200]);
+
+  //    Open the NEXT wheel-day with an INELIGIBLE spinner. That still creates
+  //    the day's state row, but an ineligible player cannot collect, so the
+  //    carried queue is observable before anything drains it.
+  const nextDay = shiftWheelDay(DAY, 1);
+  const opener = await spin('cf-opener', { day: nextDay, eligible: false });
+  check('the ineligible opener does not collect', opener.carryover_awarded, false);
+  check('the unclaimed prize moved to the new day', await queue(nextDay), [200]);
+  check('the new day records what it was handed', await carriedIn(nextDay), [200]);
+  check('the old day queue is cleared, so it cannot be carried twice', await queue(DAY), []);
+
+  //    Now a fully-qualified loser on the new day collects it. In production
+  //    this happens within minutes: traffic spikes to ~50 spins/min right
+  //    after the 06:00 reset.
+  const nextDayCollector = await spin('cf-collector', { day: nextDay });
+  check('a qualifying spinner on the new day collects the carried prize', nextDayCollector.carryover_awarded, true);
+  check('and receives the exact carried amount', nextDayCollector.prize_amount, 200);
+  check('new day queue drains after collection', await queue(nextDay), []);
+
+  // 8. Nothing is carried twice: a further new day starts empty.
+  const dayAfter = shiftWheelDay(DAY, 2);
+  await spin('cf-dayafter', { day: dayAfter });
+  check('a later day starts with an empty queue', await queue(dayAfter), []);
+  check('and records nothing carried in', await carriedIn(dayAfter), []);
 
   await cleanup();
 
