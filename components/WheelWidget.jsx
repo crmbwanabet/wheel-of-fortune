@@ -5,6 +5,7 @@ import { X, Sparkles } from 'lucide-react';
 import { generateFingerprint } from '@/lib/fingerprint';
 import { hasSpun, withSpun } from '@/lib/spunCache.mjs';
 import { decideAvailability } from '@/lib/availability.mjs';
+import { msUntilNextWheelReset, splitCountdown } from '@/lib/countdown';
 
 // ============================================================================
 // DATA — 10 segments: K10, K20, K50, K100, K200, Try Again Tomorrow ×5
@@ -220,6 +221,17 @@ export default function WheelWidget({ prefillUserId = null }) {
   const [shaking, setShaking] = useState(false);
   const [showSlowingText, setShowSlowingText] = useState(false);
   const [prizeFlash, setPrizeFlash] = useState(false);
+
+  // Countdown to the next free spin, shown on the loss card. Hours and minutes
+  // only — seconds on a fourteen-hour wait are noise and would force a re-render
+  // every second for nothing. Recomputed on the minute from a pure function.
+  const [resetIn, setResetIn] = useState(() => splitCountdown(msUntilNextWheelReset(Date.now())));
+  useEffect(() => {
+    const tick = () => setResetIn(splitCountdown(msUntilNextWheelReset(Date.now())));
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const fingerprintRef = useRef(null);
   const authTokenRef = useRef(null); // raw BwanaBet JWT, received from parent via postMessage
@@ -839,11 +851,30 @@ export default function WheelWidget({ prefillUserId = null }) {
           }}>
             {spinResult.isLoss ? (
               <>
-                <div className="text-lg font-extrabold uppercase tracking-widest mb-2" style={{ color: 'rgba(255,255,255,0.7)', letterSpacing: '2px' }}>
-                  BETTER LUCK NEXT TIME
+                <div className="font-black uppercase mb-4" style={{ color: '#fff', fontSize: '24px', letterSpacing: '-0.01em', lineHeight: 1 }}>
+                  NOT THIS TIME
                 </div>
-                <div className="text-base font-bold uppercase tracking-widest mb-6" style={{ color: 'rgba(255,255,255,0.4)', letterSpacing: '2px' }}>
-                  TRY AGAIN TOMORROW
+                {/* Countdown strip. The bulb runs on its top and bottom edge use
+                    the same rhythm as the cabinet's marquee border, so the one
+                    new element on this card is built from vocabulary the widget
+                    already owns rather than imported from somewhere else. */}
+                <div className="relative mb-5" style={{
+                  background: '#12151f', border: '1px solid #333a4d', borderRadius: '8px', padding: '12px 9px 10px',
+                }}>
+                  <div style={{ position: 'absolute', left: 7, right: 7, top: 4, height: 3,
+                    background: 'repeating-linear-gradient(90deg,#ffd24a 0 3px,transparent 3px 11px)',
+                    filter: 'drop-shadow(0 0 3px rgba(255,210,74,0.6))' }} />
+                  <div style={{ position: 'absolute', left: 7, right: 7, bottom: 4, height: 3,
+                    background: 'repeating-linear-gradient(90deg,#ffd24a 0 3px,transparent 3px 11px)',
+                    filter: 'drop-shadow(0 0 3px rgba(255,210,74,0.6))' }} />
+                  <div className="uppercase" style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.19em', color: '#8e93a3' }}>
+                    NEXT FREE SPIN
+                  </div>
+                  <div style={{ fontWeight: 900, fontSize: '25px', color: '#ffd700', letterSpacing: '0.03em',
+                    lineHeight: 1.05, fontVariantNumeric: 'tabular-nums', textShadow: '0 0 14px rgba(255,215,0,0.35)' }}>
+                    {resetIn.hours}<small style={{ fontSize: '11px', color: '#8e93a3', fontWeight: 700 }}>h</small>{' '}
+                    {String(resetIn.minutes).padStart(2, '0')}<small style={{ fontSize: '11px', color: '#8e93a3', fontWeight: 700 }}>m</small>
+                  </div>
                 </div>
               </>
             ) : (
@@ -875,12 +906,19 @@ export default function WheelWidget({ prefillUserId = null }) {
               onClick={claimPrize}
               className={`w-full py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 ${
                 spinResult.isLoss
-                  ? 'bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-500/20'
+                  ? 'hover:brightness-110'
                   : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-green-500/30'
               }`}
-              style={spinResult.isLoss ? {} : { '--btn-shadow': '#065F46', '--btn-glow': 'rgba(16,185,129,0.3)', '--btn-glow2': 'rgba(16,185,129,0.15)', animation: 'collectBtnPulse 2s ease-in-out infinite' }}
+              style={spinResult.isLoss ? {
+                // Domed like the wheel's hub button so it reads as part of the
+                // same machine — but grey, because a gold button here would be
+                // celebrating a loss.
+                background: 'linear-gradient(180deg,#454b63,#2a2f42)',
+                border: '1px solid #555c76',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.16), 0 3px 9px rgba(0,0,0,0.45)',
+              } : { '--btn-shadow': '#065F46', '--btn-glow': 'rgba(16,185,129,0.3)', '--btn-glow2': 'rgba(16,185,129,0.15)', animation: 'collectBtnPulse 2s ease-in-out infinite' }}
             >
-              {spinResult.isLoss ? 'GOT IT' : 'Claim Prize!'}
+              {spinResult.isLoss ? 'SEE YOU TOMORROW' : 'Claim Prize!'}
             </button>
           </div>
         </div>
