@@ -43,7 +43,7 @@ async function handleDigest(request) {
     const supabase = getSupabase();
     const { data: state } = await supabase
       .from('wheel_daily_state')
-      .select('total_wins,total_budget_spent')
+      .select('total_wins,total_budget_spent,carryover_in')
       .eq('day_date', day).eq('test_bucket', '').maybeSingle();
     // Spin count = one row per spin. wheel_daily_state.total_spins is NOT
     // maintained (would be a hot-row contention point); the row count / per-day
@@ -74,7 +74,7 @@ async function handleDigest(request) {
         spinsLine,
         `Wins: ${state?.total_wins ?? 0} → K${state?.total_budget_spent ?? 0} / K2,000 budget`,
       ];
-      lines.push(...cooldownDigestLines(cooldownBlocked, carryoverAwarded));
+      lines.push(...cooldownDigestLines(cooldownBlocked, carryoverAwarded, state?.carryover_in));
       lines.push(`(errors delivered live; see alerts)`);
       text = lines.join('\n');
     }
