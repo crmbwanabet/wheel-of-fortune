@@ -335,19 +335,53 @@
       promo.style.transform = 'translateY(6px)';
       promo.style.display = 'none';
     }
+    function showPromoNow() {
+      if (btn.style.display === 'none') return;   // button hidden in the meantime
+      positionPromo();
+      promo.style.display = 'block';
+      void promo.offsetHeight;                    // reflow, so the transition runs
+      promo.style.opacity = '1';
+      promo.style.transform = 'translateY(0)';
+      // A CSS transition does NOT advance while the tab is hidden, and browsers
+      // throttle it under load. Without this the bubble would sit on screen at
+      // opacity 0 for its entire lifetime and then hide itself again — present
+      // in the DOM, correctly sized and positioned, and visible to nobody.
+      // Confirmed on bwanabet.com: computed opacity stayed 0 for the full 5s
+      // while the inline style read 1.
+      setTimeout(function () {
+        try {
+          if (promo.style.display === 'block' && getComputedStyle(promo).opacity !== '1') {
+            promo.style.transition = 'none';
+            promo.style.opacity = '1';
+            promo.style.transform = 'translateY(0)';
+            dbg('promo transition never ran - forced visible');
+          }
+        } catch (e) { /* never break the host page */ }
+      }, 400);
+      dbg('promo bubble shown');
+      promoHideTimer = setTimeout(hidePromo, PROMO_VISIBLE_MS);
+    }
+
     function showPromoSoon() {
       if (promoDismissed(activeCustomerId)) { dbg('promo already dismissed today by', activeCustomerId); return; }
       if (promoShowTimer || promo.style.display === 'block') return;
       promoShowTimer = setTimeout(function () {
         promoShowTimer = null;
-        if (btn.style.display === 'none') return; // button was hidden meanwhile
-        positionPromo();
-        promo.style.display = 'block';
-        void promo.offsetHeight;                  // reflow, so the transition runs
-        promo.style.opacity = '1';
-        promo.style.transform = 'translateY(0)';
-        dbg('promo bubble shown');
-        promoHideTimer = setTimeout(hidePromo, PROMO_VISIBLE_MS);
+        // Don't spend the five seconds on a tab nobody is looking at. Opening
+        // a site in a background tab is ordinary behaviour, and on mobile any
+        // app switch hides the page. Wait for it to come to the front.
+        if (document.visibilityState === 'hidden') {
+          dbg('tab is hidden - holding the promo until it is looked at');
+          var onVis = function () {
+            if (document.visibilityState !== 'hidden') {
+              document.removeEventListener('visibilitychange', onVis);
+              showPromoNow();
+            }
+          };
+          document.addEventListener('visibilitychange', onVis);
+          return;
+        }
+        showPromoNow();
       }, PROMO_DELAY_MS);
     }
 
