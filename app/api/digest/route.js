@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getWheelDayDate, WINNABLE_POSITIONS } from '@/lib/algorithms';
 import { cooldownDigestLines } from '@/lib/cooldownDigest';
+import { shiftWheelDay } from '@/lib/cooldown';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,18 @@ async function handleDigest(request) {
 
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_ALERT_CHAT_ID;
-  const day = getWheelDayDate();
+  // Report the last COMPLETE wheel-day, never the one in progress.
+  //
+  // The cron fires at 04:10 UTC, ten minutes after the 04:00 UTC (06:00 CAT)
+  // reset, so getWheelDayDate() returns the day that has barely started. That
+  // is not a rounding error: spins spike to ~50/min in the minutes after the
+  // reset (vs ~8/min before it), so the digest was reporting several hundred
+  // spins of the NEW day as if they were the daily total, and cooldown counts
+  // — which accumulate across a full day — would always have read ~0.
+  //
+  // Shifting back one day is also correct for a manual mid-day run: a daily
+  // digest summarises a finished day, not a partial one.
+  const day = shiftWheelDay(getWheelDayDate(), -1);
 
   let text;
   try {
