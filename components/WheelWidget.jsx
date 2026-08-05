@@ -675,10 +675,15 @@ export default function WheelWidget({ prefillUserId = null }) {
     window.parent.postMessage({ type: 'bwanabet-wheel-close' }, '*');
   }, []);
 
-  // Notify parent when user has spun (result or done screen)
+  // Notify parent when user has spun (result or done screen). Carries the
+  // account this result belongs to: embed.js caches "spun today" against
+  // whoever is active when the message lands, and on a shared computer the
+  // logged-in account can change in between — caching it against the wrong
+  // customer costs them their spin. Null in test mode, where there is no token.
   useEffect(() => {
     if (screen === 'result' || screen === 'done') {
-      window.parent.postMessage({ type: 'bwanabet-wheel-spun' }, '*');
+      const customerId = customerIdFromToken(authTokenRef.current);
+      window.parent.postMessage({ type: 'bwanabet-wheel-spun', customerId }, '*');
     }
   }, [screen]);
 

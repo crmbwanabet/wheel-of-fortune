@@ -142,6 +142,18 @@
     try { localStorage.setItem(REPORT_KEY, getWheelDay()); } catch (e) { /* ignore */ }
   }
 
+  // Does a message from the widget belong to the account we currently hold?
+  // The widget computes its verdicts inside the iframe; on a shared computer
+  // the logged-in account can change between it deciding and us handling the
+  // message. Caching "spun today" against the wrong customer costs that
+  // customer their spin, so both cache writes below are gated on this.
+  // A message with no customerId comes from an older cached widget (embed.js
+  // is cached for 5 minutes independently of the widget) — treat it as a match
+  // so those keep working exactly as before.
+  function isForActiveAccount(data) {
+    return !data.customerId || data.customerId === activeCustomerId;
+  }
+
   // Account the widget is currently built/keyed for. Mutable so the widget can
   // be re-pointed when the logged-in account changes in place (SPA login).
   var activeToken = null;
@@ -334,12 +346,9 @@
           // Persist ONLY a genuine already-spun verdict. Maintenance mode and
           // expired tokens used to be cached here, which suppressed the wheel
           // for the whole wheel-day and stopped later page loads retrying.
-          // Only cache when the verdict is for the account we currently hold.
-          // On a shared computer the logged-in account can change between the
-          // widget computing this verdict and us handling the message; caching
-          // it against the wrong customer would cost them their spin. The
-          // missing-customerId clause keeps a cached older widget working.
-          var idMatches = !e.data.customerId || e.data.customerId === activeCustomerId;
+          // Only cache when the verdict is for the account we currently hold —
+          // see isForActiveAccount above.
+          var idMatches = isForActiveAccount(e.data);
           if (e.data.sticky && idMatches) {
             markSpun(activeCustomerId);
           } else if (!e.data.sticky) {
@@ -357,8 +366,18 @@
       }
 
       if (e.data.type === 'bwanabet-wheel-spun') {
-        markSpun(activeCustomerId);
-        // Hide button after a short delay (let user see result first)
+        // Same account check as the availability verdict above: the spin
+        // belongs to whoever was logged in when it happened, not to whoever
+        // is logged in by the time this message lands.
+        if (isForActiveAccount(e.data)) {
+          markSpun(activeCustomerId);
+        } else {
+          dbg('spun notice was for account', e.data.customerId,
+              'but the active account is now', activeCustomerId, '- not caching');
+        }
+        // Hide button after a short delay (let user see result first). Always
+        // hidden: the overlay on screen belongs to the previous account, and
+        // the new account gets a fresh verdict from the re-keyed widget.
         setTimeout(function() {
           hideButton();
         }, 2000);
