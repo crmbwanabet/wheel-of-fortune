@@ -17,6 +17,16 @@
   // hidden either way — a button opening a blank overlay is worse than none.
   var READY_TIMEOUT_MS = 15000;
 
+  // Promo bubble shown above the trigger button. Styled to match the HOST
+  // site's own chat popup (small dark slate bubble, 8px radius, ~12px text, a
+  // circular close on the corner) rather than the wheel's arcade cabinet. This
+  // element lives on BwanaBet's page, not inside our iframe, so it has to look
+  // like it belongs to them — anything louder reads as a third-party advert.
+  var PROMO_TEXT = 'CONGRATULATIONS! YOU GET FREE BONUS!';
+  var PROMO_DELAY_MS = 1500;    // after the trigger button becomes visible
+  var PROMO_VISIBLE_MS = 12000;
+  var PROMO_KEY = 'bwanabet_wheel_promo';
+
   var WIDGET_ORIGIN = (function () {
     try { return new URL(WIDGET_URL).origin; } catch (e) { return '*'; }
   })();
@@ -140,6 +150,29 @@
   }
   function markReported() {
     try { localStorage.setItem(REPORT_KEY, getWheelDay()); } catch (e) { /* ignore */ }
+  }
+
+  // Promo dismissal is remembered per ACCOUNT per wheel-day, not per device: on
+  // a shared shop PC, one customer dismissing the bubble must not suppress it
+  // for the next person who logs in. Same map shape as bwanabet_wheel_spun.
+  function promoDismissed(id) {
+    if (!id) return false;
+    try {
+      var map = JSON.parse(localStorage.getItem(PROMO_KEY) || '{}');
+      return !!map && map[id] === getWheelDay();
+    } catch (e) { return false; }
+  }
+  function markPromoDismissed(id) {
+    if (!id) return;
+    try {
+      var map = {};
+      try { map = JSON.parse(localStorage.getItem(PROMO_KEY) || '{}') || {}; } catch (e) { map = {}; }
+      var today = getWheelDay();
+      var next = {};
+      for (var k in map) { if (map[k] === today) next[k] = map[k]; } // prune old days
+      next[id] = today;
+      localStorage.setItem(PROMO_KEY, JSON.stringify(next));
+    } catch (e) { /* ignore */ }
   }
 
   // Does a message from the widget belong to the account we currently hold?
@@ -267,6 +300,73 @@
     document.head.appendChild(style);
     document.body.appendChild(btn);
 
+    // --- Promo bubble ------------------------------------------------------
+    var promo = document.createElement('div');
+    promo.id = 'bwanabet-wheel-promo';
+    promo.style.cssText = 'position:fixed;right:14px;z-index:9997;display:none;' +
+      'width:min(210px,calc(100vw - 88px));box-sizing:border-box;cursor:pointer;' +
+      'background:#2b3140;color:#fff;border-radius:8px;padding:11px 13px 12px;' +
+      'font-family:"Roboto Condensed",Arial,sans-serif;font-size:12px;font-weight:700;' +
+      'line-height:1.34;letter-spacing:.01em;box-shadow:0 6px 20px rgba(0,0,0,.55);' +
+      'opacity:0;transform:translateY(6px);transition:opacity .25s ease-out,transform .25s ease-out;';
+    promo.innerHTML =
+      '<span style="position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;' +
+      'background:#4a5162;color:#fff;font-size:11px;line-height:18px;text-align:center;font-weight:700;' +
+      'cursor:pointer" data-promo-close="1">&times;</span>' +
+      '<span style="color:#fff100">' + PROMO_TEXT + '</span>' +
+      '<span style="position:absolute;right:24px;bottom:-7px;width:14px;height:8px;background:#2b3140;' +
+      '-webkit-clip-path:polygon(0 0,100% 0,50% 100%);clip-path:polygon(0 0,100% 0,50% 100%)"></span>';
+    document.body.appendChild(promo);
+
+    var promoShowTimer = null, promoHideTimer = null;
+
+    function positionPromo() {
+      // Anchor to the button's real position rather than a hard-coded offset —
+      // the button is vertically centred, so its top moves with the viewport.
+      try {
+        var r = btn.getBoundingClientRect();
+        promo.style.bottom = (window.innerHeight - r.top + 10) + 'px';
+      } catch (e) { promo.style.bottom = '55%'; }
+    }
+    function hidePromo() {
+      if (promoShowTimer) { clearTimeout(promoShowTimer); promoShowTimer = null; }
+      if (promoHideTimer) { clearTimeout(promoHideTimer); promoHideTimer = null; }
+      promo.style.opacity = '0';
+      promo.style.transform = 'translateY(6px)';
+      promo.style.display = 'none';
+    }
+    function showPromoSoon() {
+      if (promoDismissed(activeCustomerId)) { dbg('promo already dismissed today by', activeCustomerId); return; }
+      if (promoShowTimer || promo.style.display === 'block') return;
+      promoShowTimer = setTimeout(function () {
+        promoShowTimer = null;
+        if (btn.style.display === 'none') return; // button was hidden meanwhile
+        positionPromo();
+        promo.style.display = 'block';
+        void promo.offsetHeight;                  // reflow, so the transition runs
+        promo.style.opacity = '1';
+        promo.style.transform = 'translateY(0)';
+        dbg('promo bubble shown');
+        promoHideTimer = setTimeout(hidePromo, PROMO_VISIBLE_MS);
+      }, PROMO_DELAY_MS);
+    }
+
+    promo.addEventListener('click', function (e) {
+      try {
+        if (e.target && e.target.getAttribute && e.target.getAttribute('data-promo-close')) {
+          markPromoDismissed(activeCustomerId);
+          dbg('promo dismissed by', activeCustomerId);
+          hidePromo();
+          return;
+        }
+        hidePromo();
+        openWidget();
+      } catch (err) { /* never break the host page */ }
+    });
+    window.addEventListener('resize', function () {
+      if (promo.style.display === 'block') positionPromo();
+    });
+
     // --- Create iframe overlay (hidden) ---
     var overlay = document.createElement('div');
     overlay.id = 'bwanabet-wheel-overlay';
@@ -310,6 +410,7 @@
 
     function hideButton() {
       btn.style.display = 'none';
+      hidePromo();   // the bubble advertises a spin; it must never outlive the button
     }
 
     // Expose the controls the account-watcher needs when re-keying in place.
@@ -342,6 +443,7 @@
             'sticky=', e.data.sticky, 'reason=', e.data.reason, e.data);
         if (e.data.available) {
           btn.style.display = 'flex';
+          showPromoSoon();
         } else {
           // Persist ONLY a genuine already-spun verdict. Maintenance mode and
           // expired tokens used to be cached here, which suppressed the wheel
