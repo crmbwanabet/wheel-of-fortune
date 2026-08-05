@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getWheelDayDate, WINNABLE_POSITIONS } from '@/lib/algorithms';
+import { cooldownDigestLines } from '@/lib/cooldownDigest';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,18 +57,12 @@ async function handleDigest(request) {
       const spinsLine = beyond > 0
         ? `Spins: ${spins} (first ${WINNABLE_POSITIONS} winnable, ${beyond} past cap)`
         : `Spins: ${spins} / ${WINNABLE_POSITIONS} winnable`;
-      const blocked = cooldownBlocked ?? 0;
-      const passedOn = carryoverAwarded ?? 0;
       const lines = [
         `📊 Wheel daily digest — ${day}`,
         spinsLine,
         `Wins: ${state?.total_wins ?? 0} → K${state?.total_budget_spent ?? 0} / K2,000 budget`,
       ];
-      // Only mention the cooldown on days it actually fired — it blocks roughly
-      // 0–1 wins/day, so a permanent "0 blocked" line would be noise.
-      if (blocked > 0 || passedOn > 0) {
-        lines.push(`Cooldown: ${blocked} blocked → ${passedOn} passed to other players`);
-      }
+      lines.push(...cooldownDigestLines(cooldownBlocked, carryoverAwarded));
       lines.push(`(errors delivered live; see alerts)`);
       text = lines.join('\n');
     }
