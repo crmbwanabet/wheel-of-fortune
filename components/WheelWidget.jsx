@@ -1352,6 +1352,16 @@ export default function WheelWidget({ prefillUserId = null }) {
             </div>
           </div>
 
+          {/* House promo. Read while the wheel is still turning — the one moment
+              the customer is looking at the screen with nothing else to do.
+              Gold on the two words carrying the promise only; a fully gold line
+              would compete with the prize segments and spend the colour. */}
+          <div className="text-center" style={{ borderTop: '1px solid #3a3f52', marginTop: '14px', paddingTop: '13px' }}>
+            <div className="font-black uppercase" style={{ fontSize: '15px', color: '#fff', lineHeight: 1.2, letterSpacing: '0.01em' }}>
+              WIN CASH <span style={{ color: '#ffd700' }}>EVERYDAY</span><br />WHEN YOU DEPOSIT!
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
