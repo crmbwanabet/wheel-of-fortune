@@ -213,7 +213,12 @@
     // --- Create floating trigger button ---
     var btn = document.createElement('div');
     btn.id = 'bwanabet-wheel-trigger';
-    btn.innerHTML = '<svg viewBox="0 0 64 64" width="56" height="56" xmlns="http://www.w3.org/2000/svg">' +
+    // The icon lives in its own layer so the button itself can stay a stable,
+    // unanimated anchor. The promo bubble is a CHILD of the button, and if the
+    // pulse and hover-scale sat on the button the bubble would throb and grow
+    // along with it.
+    btn.innerHTML = '<div id="bwanabet-wheel-icon">' +
+      '<svg viewBox="0 0 64 64" width="56" height="56" xmlns="http://www.w3.org/2000/svg">' +
       '<defs>' +
       '<linearGradient id="bwBoxFront" x1="0%" y1="0%" x2="100%" y2="0%">' +
       '<stop offset="0%" stop-color="#eab308"/><stop offset="100%" stop-color="#facc15"/>' +
@@ -281,26 +286,33 @@
       '<polygon points="48,32 58,24 58,48 48,56" fill="none" stroke="#92400e" stroke-width="0.5" opacity="0.4"/>' +
       '<polygon points="5,25 51,25 51,32 5,32" fill="none" stroke="#b45309" stroke-width="0.5" opacity="0.3"/>' +
       '<polygon points="51,25 61,17 61,24 51,32" fill="none" stroke="#92400e" stroke-width="0.5" opacity="0.3"/>' +
-      '</svg>';
+      '</svg></div>';
 
     // Starts hidden — shown only when the widget confirms a spin is available
     // for this customer today (server-checked, cross-device).
+    // The button is now a bare anchor box — no background, glow or animation of
+    // its own. All of that moved to #bwanabet-wheel-icon so the promo bubble,
+    // which is a child of this element, inherits none of it.
     btn.style.cssText = 'position:fixed;right:16px;top:50%;transform:translateY(-50%);z-index:9998;' +
-      'cursor:pointer;width:64px;height:64px;border-radius:50%;' +
-      'background:rgba(250,204,21,0.15);backdrop-filter:blur(4px);' +
-      'display:none;align-items:center;justify-content:center;' +
-      'box-shadow:0 4px 20px rgba(250,204,21,0.4),0 0 0 0 rgba(250,204,21,0.6);' +
-      'transition:transform 0.2s ease;';
+      'cursor:pointer;width:64px;height:64px;' +
+      'display:none;align-items:center;justify-content:center;';
 
     // Pulse animation
     var style = document.createElement('style');
+    // The pulse runs on the inner icon, not the button. It no longer carries
+    // translateY(-50%): that only made sense while the button itself was the
+    // animated element sitting at top:50%.
     style.textContent = '@keyframes bwPulse{' +
-      '0%{box-shadow:0 4px 20px rgba(250,204,21,0.4),0 0 0 0 rgba(250,204,21,0.6);transform:translateY(-50%) scale(1);}' +
-      '50%{box-shadow:0 4px 30px rgba(250,204,21,0.6),0 0 0 12px rgba(250,204,21,0);transform:translateY(-50%) scale(1.08);}' +
-      '100%{box-shadow:0 4px 20px rgba(250,204,21,0.4),0 0 0 0 rgba(250,204,21,0.6);transform:translateY(-50%) scale(1);}' +
+      '0%{box-shadow:0 4px 20px rgba(250,204,21,0.4),0 0 0 0 rgba(250,204,21,0.6);transform:scale(1);}' +
+      '50%{box-shadow:0 4px 30px rgba(250,204,21,0.6),0 0 0 12px rgba(250,204,21,0);transform:scale(1.08);}' +
+      '100%{box-shadow:0 4px 20px rgba(250,204,21,0.4),0 0 0 0 rgba(250,204,21,0.6);transform:scale(1);}' +
       '}' +
-      '#bwanabet-wheel-trigger{animation:bwPulse 2s ease-in-out infinite;}' +
-      '#bwanabet-wheel-trigger:hover{animation:none;transform:translateY(-50%) scale(1.15);}' +
+      '#bwanabet-wheel-icon{width:64px;height:64px;border-radius:50%;' +
+      'background:rgba(250,204,21,0.15);backdrop-filter:blur(4px);' +
+      'display:flex;align-items:center;justify-content:center;' +
+      'box-shadow:0 4px 20px rgba(250,204,21,0.4),0 0 0 0 rgba(250,204,21,0.6);' +
+      'transition:transform 0.2s ease;animation:bwPulse 2s ease-in-out infinite;}' +
+      '#bwanabet-wheel-trigger:hover #bwanabet-wheel-icon{animation:none;transform:scale(1.15);}' +
       '#bwanabet-wheel-overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);' +
       'align-items:center;justify-content:center;}' +
       '#bwanabet-wheel-overlay.open{display:flex;}' +
@@ -311,7 +323,13 @@
     // --- Promo bubble ------------------------------------------------------
     var promo = document.createElement('div');
     promo.id = 'bwanabet-wheel-promo';
-    promo.style.cssText = 'position:fixed;left:-9999px;top:-9999px;z-index:' + PROMO_Z + ';' +
+    // ATTACHED TO THE BUTTON, not the page. Being a child of the trigger means
+    // it inherits the button's position for free — it moves wherever the host
+    // site puts the widget, needs no coordinate maths, is hidden automatically
+    // whenever the button is hidden, and structurally cannot drift onto another
+    // widget. The previous version positioned itself against the viewport and
+    // ended up on the site's chatbot.
+    promo.style.cssText = 'position:absolute;z-index:1;' +
       'display:none;width:min(210px,calc(100vw - 32px));box-sizing:border-box;cursor:pointer;' +
       'background:#2b3140;color:#fff;border-radius:8px;padding:11px 13px 12px;' +
       'font-family:"Roboto Condensed",Arial,sans-serif;font-size:12px;font-weight:700;' +
@@ -336,7 +354,7 @@
     promo.appendChild(promoClose);
     promo.appendChild(promoText);
     promo.appendChild(tail);
-    document.body.appendChild(promo);
+    btn.appendChild(promo);   // child of the widget, not of the page
 
     var promoShowTimer = null, promoHideTimer = null;
 
@@ -362,38 +380,34 @@
       return false;
     }
 
-    // Places the bubble against the button's MEASURED rect. Must run while the
-    // bubble is display:block, otherwise offsetWidth/Height are 0.
+    // Places the bubble RELATIVE TO ITS PARENT (the button) in CSS, so it needs
+    // no page coordinates at all. The only measurement is which way to open —
+    // and even that is just a side choice, so getting it wrong shifts the
+    // bubble by its own width rather than throwing it across the screen.
     function positionPromo(preferRightAlign) {
-      var GAP = 10, EDGE = 8;
+      var GAP = 10;
       try {
         var r = btn.getBoundingClientRect();
         if (!r || (!r.width && !r.height)) return false;   // button not laid out
         var vw = window.innerWidth || document.documentElement.clientWidth;
-        var vh = window.innerHeight || document.documentElement.clientHeight;
-        var pw = promo.offsetWidth || 210;
         var ph = promo.offsetHeight || 55;
 
-        // Vertical: prefer above the button, flip below when there is no room.
-        var above = (r.top - GAP - ph) >= EDGE;
-        var top = above ? (r.top - GAP - ph) : Math.min(r.bottom + GAP, vh - ph - EDGE);
-        top = Math.max(EDGE, top);
+        // Open upward unless the button sits too near the top of the screen.
+        var above = r.top >= (ph + GAP + 8);
+        if (above) { promo.style.bottom = 'calc(100% + ' + GAP + 'px)'; promo.style.top = 'auto'; }
+        else { promo.style.top = 'calc(100% + ' + GAP + 'px)'; promo.style.bottom = 'auto'; }
 
-        // Horizontal: hug the side of the button that faces the screen centre,
-        // unless we are retrying on the other side after a collision.
+        // Open away from the nearest screen edge, so the bubble always grows
+        // inward and stays on screen whichever corner the host puts the widget.
         var cx = r.left + r.width / 2;
         var alignRight = preferRightAlign != null ? preferRightAlign : (cx >= vw / 2);
-        var left = alignRight ? (r.right - pw) : r.left;
-        left = Math.max(EDGE, Math.min(left, vw - pw - EDGE));
+        if (alignRight) { promo.style.right = '0px'; promo.style.left = 'auto'; }
+        else { promo.style.left = '0px'; promo.style.right = 'auto'; }
 
-        promo.style.top = Math.round(top) + 'px';
-        promo.style.left = Math.round(left) + 'px';
-        promo.style.right = 'auto';
-        promo.style.bottom = 'auto';
-
-        // Tail points at the button's centre, kept clear of the rounded corners.
-        var tx = Math.max(12, Math.min(cx - left - 7, pw - 26));
-        tail.style.left = Math.round(tx) + 'px';
+        // Tail sits over the button's centre.
+        var tx = Math.round(r.width / 2 - 7);
+        if (alignRight) { tail.style.right = tx + 'px'; tail.style.left = 'auto'; }
+        else { tail.style.left = tx + 'px'; tail.style.right = 'auto'; }
         if (above) { tail.style.top = 'auto'; tail.style.bottom = '-7px'; tail.style.transform = 'none'; }
         else { tail.style.bottom = 'auto'; tail.style.top = '-7px'; tail.style.transform = 'rotate(180deg)'; }
         return true;
@@ -466,13 +480,19 @@
     promo.addEventListener('click', function (e) {
       try {
         if (e.target && e.target.getAttribute && e.target.getAttribute('data-promo-close')) {
+          // The bubble lives inside the trigger button, so without this the
+          // close tap would bubble up and open the wheel — the opposite of
+          // what the customer asked for.
+          e.stopPropagation();
+          if (e.preventDefault) e.preventDefault();
           markPromoDismissed(activeCustomerId);
           dbg('promo dismissed by', activeCustomerId);
           hidePromo();
           return;
         }
+        // Anywhere else on the bubble: just close it and let the click reach
+        // the button, which opens the wheel.
         hidePromo();
-        openWidget();
       } catch (err) { /* never break the host page */ }
     });
     window.addEventListener('resize', function () {
