@@ -17,6 +17,24 @@
   // hidden either way — a button opening a blank overlay is worse than none.
   var READY_TIMEOUT_MS = 15000;
 
+  // Promo bubble shown next to the trigger button. Styled after the host site's
+  // own chat popup (small dark slate bubble, 8px radius, ~12px text, circular
+  // close on the corner) because it renders on BwanaBet's page, not in our
+  // iframe.
+  //
+  // CRITICAL: never hard-code where this goes. embed.js asks for the trigger at
+  // `right:16px; top:50%`, but bwanabet.com's stylesheet overrides that and puts
+  // it BOTTOM-LEFT (measured: x=20, y=619 on 1210x703). A previous version
+  // pinned the bubble to `right:14px` and derived only its vertical offset from
+  // the button, so it pinned to the right edge and rendered on top of the site's
+  // chatbot. Both axes come from the measured rect now, and the bubble refuses
+  // to show at all if it would overlap another fixed widget.
+  var PROMO_TEXT = 'CONGRATULATIONS! YOU GET FREE BONUS!';
+  var PROMO_DELAY_MS = 1500;    // after the trigger button becomes visible
+  var PROMO_VISIBLE_MS = 5000;  // then it fades out on its own
+  var PROMO_KEY = 'bwanabet_wheel_promo';
+  var PROMO_Z = 9997;           // below the button (9998) and overlay (9999)
+
   var WIDGET_ORIGIN = (function () {
     try { return new URL(WIDGET_URL).origin; } catch (e) { return '*'; }
   })();
@@ -140,6 +158,29 @@
   }
   function markReported() {
     try { localStorage.setItem(REPORT_KEY, getWheelDay()); } catch (e) { /* ignore */ }
+  }
+
+  // Promo dismissal is remembered per ACCOUNT per wheel-day, not per device: on
+  // a shared shop PC, one customer dismissing the bubble must not suppress it
+  // for the next person who logs in. Same map shape as bwanabet_wheel_spun.
+  function promoDismissed(id) {
+    if (!id) return false;
+    try {
+      var map = JSON.parse(localStorage.getItem(PROMO_KEY) || '{}');
+      return !!map && map[id] === getWheelDay();
+    } catch (e) { return false; }
+  }
+  function markPromoDismissed(id) {
+    if (!id) return;
+    try {
+      var map = {};
+      try { map = JSON.parse(localStorage.getItem(PROMO_KEY) || '{}') || {}; } catch (e) { map = {}; }
+      var today = getWheelDay();
+      var next = {};
+      for (var k in map) { if (map[k] === today) next[k] = map[k]; } // prune old days
+      next[id] = today;
+      localStorage.setItem(PROMO_KEY, JSON.stringify(next));
+    } catch (e) { /* ignore */ }
   }
 
   // Does a message from the widget belong to the account we currently hold?
@@ -267,6 +308,177 @@
     document.head.appendChild(style);
     document.body.appendChild(btn);
 
+    // --- Promo bubble ------------------------------------------------------
+    var promo = document.createElement('div');
+    promo.id = 'bwanabet-wheel-promo';
+    promo.style.cssText = 'position:fixed;left:-9999px;top:-9999px;z-index:' + PROMO_Z + ';' +
+      'display:none;width:min(210px,calc(100vw - 32px));box-sizing:border-box;cursor:pointer;' +
+      'background:#2b3140;color:#fff;border-radius:8px;padding:11px 13px 12px;' +
+      'font-family:"Roboto Condensed",Arial,sans-serif;font-size:12px;font-weight:700;' +
+      'line-height:1.34;letter-spacing:.01em;box-shadow:0 6px 20px rgba(0,0,0,.55);' +
+      'opacity:0;transition:opacity .25s ease-out;';
+
+    var promoClose = document.createElement('span');
+    promoClose.setAttribute('data-promo-close', '1');
+    promoClose.innerHTML = '&times;';
+    promoClose.style.cssText = 'position:absolute;top:-7px;right:-7px;width:18px;height:18px;' +
+      'border-radius:50%;background:#4a5162;color:#fff;font-size:11px;line-height:18px;' +
+      'text-align:center;font-weight:700;cursor:pointer;';
+
+    var promoText = document.createElement('span');
+    promoText.style.color = '#fff100';
+    promoText.textContent = PROMO_TEXT;
+
+    var tail = document.createElement('span');
+    tail.style.cssText = 'position:absolute;width:14px;height:8px;background:#2b3140;' +
+      '-webkit-clip-path:polygon(0 0,100% 0,50% 100%);clip-path:polygon(0 0,100% 0,50% 100%);';
+
+    promo.appendChild(promoClose);
+    promo.appendChild(promoText);
+    promo.appendChild(tail);
+    document.body.appendChild(promo);
+
+    var promoShowTimer = null, promoHideTimer = null;
+
+    // True when the bubble's box overlaps any other fixed widget stacked above
+    // us. This is the guard that would have stopped the bubble rendering on the
+    // site's chatbot: if we cannot place it cleanly, we do not place it at all.
+    function promoCollides() {
+      try {
+        var pr = promo.getBoundingClientRect();
+        var all = document.querySelectorAll('body *');
+        for (var i = 0; i < all.length; i++) {
+          var el = all[i];
+          if (el === promo || el === btn || promo.contains(el) || el.id === 'bwanabet-wheel-overlay') continue;
+          var s = window.getComputedStyle(el);
+          if (s.position !== 'fixed' || s.display === 'none' || s.visibility === 'hidden') continue;
+          var z = parseInt(s.zIndex, 10);
+          if (!(z > PROMO_Z)) continue;
+          var q = el.getBoundingClientRect();
+          if (!q.width || !q.height) continue;
+          if (pr.left < q.right && pr.right > q.left && pr.top < q.bottom && pr.bottom > q.top) return true;
+        }
+      } catch (e) { /* fall through */ }
+      return false;
+    }
+
+    // Places the bubble against the button's MEASURED rect. Must run while the
+    // bubble is display:block, otherwise offsetWidth/Height are 0.
+    function positionPromo(preferRightAlign) {
+      var GAP = 10, EDGE = 8;
+      try {
+        var r = btn.getBoundingClientRect();
+        if (!r || (!r.width && !r.height)) return false;   // button not laid out
+        var vw = window.innerWidth || document.documentElement.clientWidth;
+        var vh = window.innerHeight || document.documentElement.clientHeight;
+        var pw = promo.offsetWidth || 210;
+        var ph = promo.offsetHeight || 55;
+
+        // Vertical: prefer above the button, flip below when there is no room.
+        var above = (r.top - GAP - ph) >= EDGE;
+        var top = above ? (r.top - GAP - ph) : Math.min(r.bottom + GAP, vh - ph - EDGE);
+        top = Math.max(EDGE, top);
+
+        // Horizontal: hug the side of the button that faces the screen centre,
+        // unless we are retrying on the other side after a collision.
+        var cx = r.left + r.width / 2;
+        var alignRight = preferRightAlign != null ? preferRightAlign : (cx >= vw / 2);
+        var left = alignRight ? (r.right - pw) : r.left;
+        left = Math.max(EDGE, Math.min(left, vw - pw - EDGE));
+
+        promo.style.top = Math.round(top) + 'px';
+        promo.style.left = Math.round(left) + 'px';
+        promo.style.right = 'auto';
+        promo.style.bottom = 'auto';
+
+        // Tail points at the button's centre, kept clear of the rounded corners.
+        var tx = Math.max(12, Math.min(cx - left - 7, pw - 26));
+        tail.style.left = Math.round(tx) + 'px';
+        if (above) { tail.style.top = 'auto'; tail.style.bottom = '-7px'; tail.style.transform = 'none'; }
+        else { tail.style.bottom = 'auto'; tail.style.top = '-7px'; tail.style.transform = 'rotate(180deg)'; }
+        return true;
+      } catch (e) { return false; }
+    }
+
+    function hidePromo() {
+      if (promoShowTimer) { clearTimeout(promoShowTimer); promoShowTimer = null; }
+      if (promoHideTimer) { clearTimeout(promoHideTimer); promoHideTimer = null; }
+      promo.style.opacity = '0';
+      promo.style.display = 'none';
+    }
+
+    function showPromoNow() {
+      if (btn.style.display === 'none') return;       // button hidden meanwhile
+      promo.style.display = 'block';                  // measurable from here on
+      if (!positionPromo()) { promo.style.display = 'none'; dbg('promo: button not measurable - skipped'); return; }
+      if (promoCollides()) {
+        dbg('promo overlaps another fixed widget - trying the other side');
+        var r = btn.getBoundingClientRect();
+        positionPromo(!(r.left + r.width / 2 >= (window.innerWidth || 0) / 2));
+        if (promoCollides()) {
+          // Refusing to render on top of somebody else's widget.
+          promo.style.display = 'none';
+          dbg('promo still overlaps - not showing');
+          return;
+        }
+      }
+      void promo.offsetHeight;                        // reflow, so the fade runs
+      promo.style.opacity = '1';
+      // A CSS transition does not advance in a hidden tab and is throttled under
+      // load. Without this the bubble would sit on screen at opacity 0 for its
+      // whole lifetime and hide itself again, visible to nobody.
+      setTimeout(function () {
+        try {
+          if (promo.style.display === 'block' && window.getComputedStyle(promo).opacity !== '1') {
+            promo.style.transition = 'none';
+            promo.style.opacity = '1';
+            dbg('promo transition never ran - forced visible');
+          }
+        } catch (e) { /* never break the host page */ }
+      }, 400);
+      dbg('promo bubble shown at', promo.style.left, promo.style.top);
+      promoHideTimer = setTimeout(hidePromo, PROMO_VISIBLE_MS);
+    }
+
+    function showPromoSoon() {
+      if (promoDismissed(activeCustomerId)) { dbg('promo already dismissed today by', activeCustomerId); return; }
+      if (promoShowTimer || promo.style.display === 'block') return;
+      promoShowTimer = setTimeout(function () {
+        promoShowTimer = null;
+        // Don't spend the five seconds on a tab nobody is looking at. Opening a
+        // site in a background tab is ordinary, and on mobile any app switch
+        // hides the page.
+        if (document.visibilityState === 'hidden') {
+          dbg('tab is hidden - holding the promo until it is looked at');
+          var onVis = function () {
+            if (document.visibilityState !== 'hidden') {
+              document.removeEventListener('visibilitychange', onVis);
+              showPromoNow();
+            }
+          };
+          document.addEventListener('visibilitychange', onVis);
+          return;
+        }
+        showPromoNow();
+      }, PROMO_DELAY_MS);
+    }
+
+    promo.addEventListener('click', function (e) {
+      try {
+        if (e.target && e.target.getAttribute && e.target.getAttribute('data-promo-close')) {
+          markPromoDismissed(activeCustomerId);
+          dbg('promo dismissed by', activeCustomerId);
+          hidePromo();
+          return;
+        }
+        hidePromo();
+        openWidget();
+      } catch (err) { /* never break the host page */ }
+    });
+    window.addEventListener('resize', function () {
+      if (promo.style.display === 'block') positionPromo();
+    });
+
     // --- Create iframe overlay (hidden) ---
     var overlay = document.createElement('div');
     overlay.id = 'bwanabet-wheel-overlay';
@@ -310,6 +522,7 @@
 
     function hideButton() {
       btn.style.display = 'none';
+      hidePromo();   // the bubble advertises a spin; it must never outlive the button
     }
 
     // Expose the controls the account-watcher needs when re-keying in place.
@@ -342,6 +555,7 @@
             'sticky=', e.data.sticky, 'reason=', e.data.reason, e.data);
         if (e.data.available) {
           btn.style.display = 'flex';
+          showPromoSoon();
         } else {
           // Persist ONLY a genuine already-spun verdict. Maintenance mode and
           // expired tokens used to be cached here, which suppressed the wheel
