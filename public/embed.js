@@ -17,6 +17,12 @@
   // hidden either way — a button opening a blank overlay is worse than none.
   var READY_TIMEOUT_MS = 15000;
 
+  // Fraction of AFFECTED BROWSERS that report a dead widget. Reports are a true
+  // sample of browsers, not of page loads, so the arithmetic that matters is
+  // simply: affected browsers ≈ reported / ERROR_SAMPLE_RATE. See the beacon
+  // below for why the sample is drawn the way it is.
+  var ERROR_SAMPLE_RATE = 0.05;
+
   // Promo bubble shown next to the trigger button. Styled after the host site's
   // own chat popup (small dark slate bubble, 8px radius, ~12px text, circular
   // close on the corner) because it renders on BwanaBet's page, not in our
@@ -627,16 +633,31 @@
       // fails open, so EVERY report costs a round-trip to the shared CRM database
       // before any dedup. Unbounded, a widespread widget failure would turn this
       // reporting path into database load during exactly the incident it reports.
-      // One report per browser per wheel-day, sampled at 5%. Read the resulting
-      // counts as a boolean signal ("is this happening?"), never as a rate.
-      if (reportedToday() || Math.random() >= 0.05) return;
-      markReported();
+      //
+      // The sample is drawn ONCE PER BROWSER PER WHEEL-DAY, and the marker is
+      // written whichever way the coin lands. An earlier version only wrote it
+      // when the browser was sampled, so an unsampled browser re-rolled on every
+      // page load — twenty page loads gave it a ~64% chance of eventually
+      // reporting. The counts then measured how deeply people browsed rather
+      // than how often the widget failed, and could not be read as a rate at
+      // all: extrapolating them produced 117% of spins in one hour.
+      //
+      // Decided-then-sampled makes these a true sample of AFFECTED BROWSERS, so
+      // affected ≈ reported / ERROR_SAMPLE_RATE.
+      if (reportedToday()) return;   // this browser was already decided today
+      markReported();                // record the decision before drawing
+      if (Math.random() >= ERROR_SAMPLE_RATE) return;
       dbg('widget never signalled ready within', READY_TIMEOUT_MS, 'ms - iframe blocked or failed to load');
       try {
         var payload = JSON.stringify({
           type: 'widget_never_ready',
-          message: 'no bwanabet-wheel-ready within ' + READY_TIMEOUT_MS + 'ms (iframe load event ' + (loadSeen ? 'fired' : 'never fired') + ')',
+          message: 'no bwanabet-wheel-ready within ' + READY_TIMEOUT_MS + 'ms (iframe load event ' +
+            (loadSeen ? 'fired' : 'never fired') + '; 1-in-' + Math.round(1 / ERROR_SAMPLE_RATE) + ' sample of browsers)',
           context: location.host,
+          // Attribution: without this a dead widget cannot be tied back to an
+          // account, so there is no way to tell whether the customer lost their
+          // spin. Null when the failure happened before a session was read.
+          customerId: activeCustomerId || null,
         });
         if (navigator.sendBeacon) {
           navigator.sendBeacon(WIDGET_ORIGIN + '/api/telemetry', new Blob([payload], { type: 'text/plain' }));
