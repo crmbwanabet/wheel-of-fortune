@@ -155,6 +155,44 @@ function reportClientError(type, message, context) {
   } catch { /* never break the widget */ }
 }
 
+// Scales its text to fill the width of its parent button.
+//
+// Hand-tuning a font size per label looks fine until the wording changes — and
+// these labels have changed repeatedly. This measures instead: render at `max`,
+// read the natural width, then scale to `fill` of the space available. Re-runs
+// when the text changes and when the button resizes, so it survives both new
+// copy and a rotated phone.
+//
+// `min` is a floor, not a target: a long label shrinks to fit rather than
+// overflowing, which is the failure mode that matters on a 320px screen.
+function FitText({ children, max = 32, min = 13, fill = 0.9, className = '', style = {} }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    const parent = el && el.parentElement;
+    if (!el || !parent) return;
+    const fit = () => {
+      el.style.fontSize = `${max}px`;
+      const natural = el.scrollWidth;
+      const avail = parent.clientWidth * fill;
+      if (!natural || !avail) return;
+      const next = Math.max(min, Math.min(max, max * (avail / natural)));
+      el.style.fontSize = `${next.toFixed(1)}px`;
+    };
+    fit();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(fit);
+    ro.observe(parent);
+    return () => ro.disconnect();
+  }, [children, max, min, fill]);
+  return (
+    <span ref={ref} className={className}
+      style={{ display: 'block', whiteSpace: 'nowrap', lineHeight: 1.05, ...style }}>
+      {children}
+    </span>
+  );
+}
+
 // ============================================================================
 // PARTICLE SYSTEM — colored shapes (no emojis)
 // ============================================================================
@@ -827,26 +865,27 @@ export default function WheelWidget({ prefillUserId = null }) {
                 so it occupies the first ~48px of the card. The old layout had a
                 brand line absorbing that space. */}
             <h1 className="font-black leading-[0.9] mt-5" style={{
-              fontSize: 'clamp(18px, 6.4vw, 25px)',
-              letterSpacing: '-0.02em',
-              color: '#ffd700',
+              fontSize: 'clamp(20px, 7.4vw, 29px)',
+              letterSpacing: '-0.01em',
+              color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
             }}>CONGRATULATIONS!</h1>
-            <h2 className="font-black tracking-tight leading-[1.05] mt-2 mb-5 text-white" style={{
-              fontSize: 'clamp(17px, 5.2vw, 22px)',
+            <h2 className="font-black tracking-tight leading-[1.05] mt-2 mb-5" style={{
+              fontSize: 'clamp(18px, 5.8vw, 24px)',
+              color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
             }}>YOU GET FREE BONUS!</h2>
 
             <button
               type="button"
               onClick={startPlaying}
-              className="bw-play-pulse w-full mt-2 py-3.5 rounded-xl font-bold text-lg transition-all hover:scale-[1.03] active:scale-95"
+              className="bw-play-pulse w-full mt-2 py-2.5 px-3 rounded-xl font-black transition-all hover:scale-[1.03] active:scale-95"
               style={{
                 background: 'linear-gradient(135deg, #f59e0b, #d97706)',
                 animation: 'playBtnPulse 2.4s ease-in-out infinite',
               }}
             >
-              Play!
+              <FitText max={36}>PLAY!</FitText>
             </button>
           </div>
         </div>
@@ -920,7 +959,7 @@ export default function WheelWidget({ prefillUserId = null }) {
             <button
               type="button"
               onClick={claimPrize}
-              className={`w-full py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 ${
+              className={`w-full py-2.5 px-3 rounded-xl font-black shadow-lg transition-all hover:scale-[1.03] active:scale-95 ${
                 spinResult.isLoss
                   ? 'hover:brightness-110'
                   : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-green-500/30'
@@ -934,7 +973,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                 boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.16), 0 3px 9px rgba(0,0,0,0.45)',
               } : { '--btn-shadow': '#065F46', '--btn-glow': 'rgba(16,185,129,0.3)', '--btn-glow2': 'rgba(16,185,129,0.15)', animation: 'collectBtnPulse 2s ease-in-out infinite' }}
             >
-              {spinResult.isLoss ? 'SEE YOU TOMORROW' : 'Claim Prize!'}
+              <FitText max={34}>{spinResult.isLoss ? 'SEE YOU TOMORROW' : 'CLAIM PRIZE!'}</FitText>
             </button>
           </div>
         </div>
@@ -960,9 +999,9 @@ export default function WheelWidget({ prefillUserId = null }) {
             <button
               type="button"
               onClick={handleClose}
-              className="w-full py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-500/20"
+              className="w-full py-2.5 px-3 rounded-xl font-black shadow-lg transition-all hover:scale-[1.03] active:scale-95 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-500/20"
             >
-              GOT IT
+              <FitText max={34}>GOT IT</FitText>
             </button>
           </div>
         </div>
@@ -1047,19 +1086,12 @@ export default function WheelWidget({ prefillUserId = null }) {
               color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
             }}>BWANABET</h1>
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-[0.9] mt-1">
-              <span style={{
-                background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-              }}>SPIN</span>{' '}
-              <span className="text-white text-2xl sm:text-3xl" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))' }}>AND</span>{' '}
-              <span style={{
-                background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-              }}>WIN</span>
-            </h1>
+            {/* Same brand yellow as BWANABET above it — the marquee reads as one
+                unit rather than two different yellows stacked. */}
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-[0.9] mt-1" style={{
+              color: BWANA_YELLOW,
+              filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
+            }}>SPIN AND WIN</h1>
           </div>
 
           {/* ============ WHEEL AREA ============ */}
@@ -1292,12 +1324,12 @@ export default function WheelWidget({ prefillUserId = null }) {
                     return (
                       <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
                         <text x={150 + 100} y={150 - 7} textAnchor="middle" dominantBaseline="central"
-                          fill="white" fontSize="11" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                          fill="white" fontSize="11" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
                           stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
                           TRY AGAIN
                         </text>
                         <text x={150 + 100} y={150 + 7} textAnchor="middle" dominantBaseline="central"
-                          fill="white" fontSize="11" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                          fill="white" fontSize="11" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
                           stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
                           TOMORROW
                         </text>
@@ -1305,7 +1337,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                     );
                   }
                   return (
-                    <text key={`t${i}`} fill="white" fontSize="26" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                    <text key={`t${i}`} fill="white" fontSize="26" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
                       stroke="rgba(0,0,0,0.6)" strokeWidth="3" paintOrder="stroke" letterSpacing="2">
                       <textPath href={`#segArc${i}`} startOffset="50%" textAnchor="middle">
                         {seg.label}
