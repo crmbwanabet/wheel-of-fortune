@@ -814,7 +814,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       {/* ============================================================ */}
       {screen === 'needLogin' && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
-          <div className="relative text-center p-8 rounded-2xl max-w-xs w-full mx-4" style={{
+          <div className="relative text-center px-3 py-6 rounded-2xl max-w-xs w-full mx-4" style={{
             background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
             border: '3px solid #3a3f52',
             boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
@@ -837,7 +837,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       {/* ============================================================ */}
       {screen === 'prompt' && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)', animation: 'fadeIn 0.3s ease-out' }}>
-          <div className="relative text-center p-8 rounded-2xl max-w-xs w-full mx-4" style={{
+          <div className="relative text-center px-3 py-6 rounded-2xl max-w-xs w-full mx-4" style={{
             background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
             border: '3px solid #3a3f52',
             boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
@@ -864,17 +864,20 @@ export default function WheelWidget({ prefillUserId = null }) {
             {/* mt-5 clears the close button: it sits at top-3 and is 36px tall,
                 so it occupies the first ~48px of the card. The old layout had a
                 brand line absorbing that space. */}
-            <h1 className="font-black leading-[0.9] mt-5" style={{
-              fontSize: 'clamp(20px, 7.4vw, 29px)',
-              letterSpacing: '-0.01em',
+            {/* Measured to the card's edges rather than sized by guesswork. A
+                clamp has to be tuned to the longest word and then leaves every
+                shorter line undersized; FitText pushes each line to 98% of the
+                available width whatever it says. */}
+            <h1 className="font-black leading-[0.92] mt-5" style={{
+              letterSpacing: '-0.02em',
               color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}>CONGRATULATIONS!</h1>
-            <h2 className="font-black tracking-tight leading-[1.05] mt-2 mb-5" style={{
-              fontSize: 'clamp(18px, 5.8vw, 24px)',
+            }}><FitText max={44} fill={0.98}>CONGRATULATIONS!</FitText></h1>
+            <h2 className="font-black leading-[1.0] mt-1.5 mb-5" style={{
+              letterSpacing: '-0.02em',
               color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}>YOU GET FREE BONUS!</h2>
+            }}><FitText max={40} fill={0.98}>YOU GET FREE BONUS!</FitText></h2>
 
             <button
               type="button"
@@ -885,7 +888,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                 animation: 'playBtnPulse 2.4s ease-in-out infinite',
               }}
             >
-              <FitText max={36}>PLAY!</FitText>
+              <FitText max={72} fill={0.95}>PLAY!</FitText>
             </button>
           </div>
         </div>
@@ -896,7 +899,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       {/* ============================================================ */}
       {spinResult && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
-          <div className="text-center p-8 rounded-3xl max-w-xs w-full mx-4" style={{
+          <div className="text-center px-3 py-6 rounded-3xl max-w-xs w-full mx-4" style={{
             background: 'linear-gradient(180deg, rgba(30,40,60,0.95), rgba(15,20,35,0.98))',
             border: `2px solid ${spinResult.isLoss ? 'rgba(156,163,175,0.3)' : 'rgba(251,191,36,0.3)'}`,
             boxShadow: spinResult.isLoss
@@ -973,7 +976,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                 boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.16), 0 3px 9px rgba(0,0,0,0.45)',
               } : { '--btn-shadow': '#065F46', '--btn-glow': 'rgba(16,185,129,0.3)', '--btn-glow2': 'rgba(16,185,129,0.15)', animation: 'collectBtnPulse 2s ease-in-out infinite' }}
             >
-              <FitText max={34}>{spinResult.isLoss ? 'SEE YOU TOMORROW' : 'CLAIM PRIZE!'}</FitText>
+              <FitText max={48} fill={0.95}>{spinResult.isLoss ? 'SEE YOU TOMORROW' : 'CLAIM PRIZE!'}</FitText>
             </button>
           </div>
         </div>
@@ -984,7 +987,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       {/* ============================================================ */}
       {screen === 'done' && !spinResult && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
-          <div className="text-center p-8 rounded-3xl max-w-xs w-full mx-4" style={{
+          <div className="text-center px-3 py-6 rounded-3xl max-w-xs w-full mx-4" style={{
             background: 'linear-gradient(180deg, rgba(30,40,60,0.95), rgba(15,20,35,0.98))',
             border: '2px solid rgba(156,163,175,0.3)',
             boxShadow: '0 0 60px rgba(100,100,100,0.1), 0 20px 60px rgba(0,0,0,0.5)',
@@ -1001,7 +1004,7 @@ export default function WheelWidget({ prefillUserId = null }) {
               onClick={handleClose}
               className="w-full py-2.5 px-3 rounded-xl font-black shadow-lg transition-all hover:scale-[1.03] active:scale-95 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-500/20"
             >
-              <FitText max={34}>GOT IT</FitText>
+              <FitText max={72} fill={0.95}>GOT IT</FitText>
             </button>
           </div>
         </div>
@@ -1082,16 +1085,18 @@ export default function WheelWidget({ prefillUserId = null }) {
                 dominant colour across 72,294 of its pixels. Note the site's
                 REGISTER button uses #FFF100, a shade off; this follows the
                 logo, which is what the wordmark should match. */}
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-[0.9]" style={{
+            <h1 className="font-black leading-[0.92]" style={{
+              letterSpacing: '-0.02em',
               color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}>BWANABET</h1>
+            }}><FitText max={46} fill={0.98}>BWANABET</FitText></h1>
             {/* Same brand yellow as BWANABET above it — the marquee reads as one
                 unit rather than two different yellows stacked. */}
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-[0.9] mt-1" style={{
+            <h1 className="font-black leading-[0.92] mt-0.5" style={{
+              letterSpacing: '-0.02em',
               color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}>SPIN AND WIN</h1>
+            }}><FitText max={44} fill={0.98}>SPIN AND WIN</FitText></h1>
           </div>
 
           {/* ============ WHEEL AREA ============ */}
