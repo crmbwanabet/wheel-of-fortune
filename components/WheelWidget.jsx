@@ -969,11 +969,12 @@ export default function WheelWidget({ prefillUserId = null }) {
               }`}
               style={spinResult.isLoss ? {
                 // Domed like the wheel's hub button so it reads as part of the
-                // same machine — but grey, because a gold button here would be
-                // celebrating a loss.
-                background: 'linear-gradient(180deg,#454b63,#2a2f42)',
-                border: '1px solid #555c76',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.16), 0 3px 9px rgba(0,0,0,0.45)',
+                // same machine. Red matches the hub and the close control, and
+                // keeps gold reserved for prizes.
+                background: 'linear-gradient(180deg,#ef4444,#b91c1c)',
+                border: '1px solid #f87171',
+                color: '#fff',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.22), 0 3px 9px rgba(0,0,0,0.45)',
               } : { '--btn-shadow': '#065F46', '--btn-glow': 'rgba(16,185,129,0.3)', '--btn-glow2': 'rgba(16,185,129,0.15)', animation: 'collectBtnPulse 2s ease-in-out infinite' }}
             >
               <FitText max={48} fill={0.95}>{spinResult.isLoss ? 'SEE YOU TOMORROW' : 'CLAIM PRIZE!'}</FitText>
