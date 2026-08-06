@@ -150,7 +150,7 @@ async function postSpinWithRetry(body) {
 // Best-effort client error reporter → /api/telemetry. Deduped to one report
 // per signature per page load; fully fire-and-forget (never throws/awaits).
 const _reportedSigs = new Set();
-function reportClientError(type, message, context) {
+function reportClientError(type, message, context, customerId) {
   try {
     const sig = `${type}:${String(message).slice(0, 80)}`;
     if (_reportedSigs.has(sig)) return;
@@ -158,7 +158,16 @@ function reportClientError(type, message, context) {
     fetch('/api/telemetry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, message: String(message).slice(0, 500), context }),
+      // customerId matters most on spin_network_error: the server may have
+      // recorded the spin while the response never reached the phone, so the
+      // customer used their spin and saw a failure. Without the account there
+      // is no way to find those people afterwards.
+      body: JSON.stringify({
+        type,
+        message: String(message).slice(0, 500),
+        context,
+        customerId: customerId != null ? String(customerId) : null,
+      }),
       keepalive: true,
     }).catch(() => {});
   } catch { /* never break the widget */ }
@@ -733,7 +742,7 @@ export default function WheelWidget({ prefillUserId = null }) {
           return;
         }
         if (data.error) {
-          reportClientError('spin_failed', data.error || 'unknown', null);
+          reportClientError('spin_failed', data.error || 'unknown', null, spunCustomerId);
           // Land on a random loss segment on error too
           const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
           const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
@@ -746,7 +755,7 @@ export default function WheelWidget({ prefillUserId = null }) {
         pendingResultRef.current = { winIndex: data.segmentIndex, data };
       })
       .catch(() => {
-        reportClientError('spin_network_error', 'spin request failed', null);
+        reportClientError('spin_network_error', 'spin request failed', null, spunCustomerId);
         // Land on a random loss segment on network error
         const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
         const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];

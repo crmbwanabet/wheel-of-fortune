@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { reportError } from '@/lib/telemetry';
+import { parseCustomerId } from '@/lib/telemetryInput';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,10 +25,14 @@ export async function POST(request) {
 
     const type = typeof body.type === 'string' ? body.type.slice(0, 60) : 'client_error';
     const message = typeof body.message === 'string' ? body.message.slice(0, 500) : 'client error';
+    // Attribution. This arrives from an unauthenticated public endpoint, so it
+    // is a reporting hint and nothing more — never trust it for authorisation.
+    const customerId = parseCustomerId(body.customerId);
     waitUntil(reportError(new Error(message), {
       route: 'widget',
       code: type,
       source: 'widget',
+      customerId,
       extra: typeof body.context === 'string' ? body.context.slice(0, 200) : undefined,
     }));
     return NextResponse.json({ ok: true });
