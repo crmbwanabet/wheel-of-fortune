@@ -36,6 +36,15 @@ const SEG_ANGLE = 360 / NUM;
 // wordmark, that is the other value.
 const BWANA_YELLOW = '#FEF200';
 
+// window.onerror messages that are not worth an alert. Each report costs a
+// Telegram message to the owner and a write to the database shared with the
+// CRM, so anything that fires routinely and means nothing has to be excluded
+// or the channel stops being read.
+const IGNORED_WINDOW_ERRORS = [
+  'ResizeObserver loop',        // browser deferring a notification; harmless
+  'Script error.',              // cross-origin script with no detail attached
+];
+
 // ============================================================================
 // AUTH ORIGIN ALLOWLIST
 // The widget receives the BwanaBet session token from its parent page via
@@ -171,19 +180,40 @@ function FitText({ children, max = 32, min = 13, fill = 0.9, className = '', sty
     const el = ref.current;
     const parent = el && el.parentElement;
     if (!el || !parent) return;
+    let raf = 0;
+    let applied = null;
     const fit = () => {
       el.style.fontSize = `${max}px`;
       const natural = el.scrollWidth;
       const avail = parent.clientWidth * fill;
-      if (!natural || !avail) return;
+      if (!natural || !avail) { if (applied != null) el.style.fontSize = `${applied}px`; return; }
       const next = Math.max(min, Math.min(max, max * (avail / natural)));
-      el.style.fontSize = `${next.toFixed(1)}px`;
+      const rounded = Number(next.toFixed(1));
+      applied = rounded;
+      el.style.fontSize = `${rounded}px`;
     };
     fit();
     if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(fit);
+    // Deferred to the next frame, and skipped when the size would not change.
+    //
+    // Measuring resets font-size to `max`, which resizes this element, which
+    // the observer sees — a loop. Browsers break it by dropping notifications
+    // and firing "ResizeObserver loop completed with undelivered
+    // notifications", which this widget's window.onerror handler then reports
+    // to Telegram and the shared database. Four of those landed in production
+    // telemetry within two hours of the first deploy.
+    const onResize = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const before = applied;
+        fit();
+        if (applied === before) return;   // nothing moved; don't churn
+      });
+    };
+    const ro = new ResizeObserver(onResize);
     ro.observe(parent);
-    return () => ro.disconnect();
+    return () => { if (raf) cancelAnimationFrame(raf); ro.disconnect(); };
   }, [children, max, min, fill]);
   return (
     <span ref={ref} className={className}
@@ -477,7 +507,15 @@ export default function WheelWidget({ prefillUserId = null }) {
   // Report uncaught client-side JS errors and promise rejections to telemetry.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const onError = (e) => reportClientError('window_error', e?.message || 'error', e?.filename);
+    const onError = (e) => {
+      // Benign browser noise that costs a Telegram alert and a row in the
+      // shared CRM database every time it fires. "ResizeObserver loop..." is
+      // the browser telling itself it deferred a notification; nothing is
+      // broken and no customer sees anything. Industry error trackers filter it
+      // by default for the same reason.
+      if (IGNORED_WINDOW_ERRORS.some(p => (e?.message || '').includes(p))) return;
+      reportClientError('window_error', e?.message || 'error', e?.filename);
+    };
     const onRejection = (e) => reportClientError('unhandled_rejection', e?.reason?.message || String(e?.reason), null);
     window.addEventListener('error', onError);
     window.addEventListener('unhandledrejection', onRejection);
