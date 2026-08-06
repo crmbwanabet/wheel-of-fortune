@@ -23,6 +23,54 @@
   // below for why the sample is drawn the way it is.
   var ERROR_SAMPLE_RATE = 0.05;
 
+  // Tiny (2-byte) file on the widget origin, fetched only when the widget has
+  // already failed, to tell blocked apart from slow.
+  var PROBE_PATH = '/ping.txt';
+  var PROBE_TIMEOUT_MS = 5000;
+
+  // Extra observation time before deciding WHY the widget is dead.
+  //
+  // Classifying at the 15s mark reads a snapshot, and a snapshot cannot tell a
+  // blocked frame from a slow one. Caught in testing: the iframe fired load at
+  // 17.4s — 2.4s after the deadline — and the report had already gone out
+  // saying "frame_blocked". That is the opposite conclusion from the truth and
+  // would send us chasing ad-blockers instead of load time.
+  var DIAGNOSE_GRACE_MS = 8000;
+
+  // Coarse connection description. "widget never loaded" on 2g with saveData on
+  // is a slow network; the same report on 4g is something blocking it. Without
+  // this the two are indistinguishable in the log, and they need opposite fixes.
+  function netInfo() {
+    try {
+      var c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      var bits = [];
+      if (navigator.onLine === false) bits.push('offline');
+      if (c && c.effectiveType) bits.push(c.effectiveType);
+      if (c && c.saveData) bits.push('saveData');
+      return bits.length ? bits.join('+') : 'unknown';
+    } catch (e) { return 'unknown'; }
+  }
+
+  // Is the widget origin reachable from this browser at all?
+  //
+  // Worth being precise about what this can prove. embed.js is ITSELF served
+  // from that origin, so if it were blocked at DNS or ISP level this code would
+  // never run and no report would exist. A probe that fails here therefore
+  // means something is blocking requests selectively — an extension rule
+  // rather than a dead network. A probe that succeeds while the iframe never
+  // loaded points at frame-level blocking specifically.
+  function probeOrigin(cb) {
+    var t0 = Date.now(), done = false;
+    function finish(ok) { if (done) return; done = true; cb(ok, Date.now() - t0); }
+    try {
+      if (typeof fetch !== 'function') { finish(false); return; }
+      var timer = setTimeout(function () { finish(false); }, PROBE_TIMEOUT_MS);
+      fetch(WIDGET_ORIGIN + PROBE_PATH + '?t=' + t0, { cache: 'no-store', mode: 'no-cors' })
+        .then(function () { clearTimeout(timer); finish(true); })
+        .catch(function () { clearTimeout(timer); finish(false); });
+    } catch (e) { finish(false); }
+  }
+
   // Promo bubble shown next to the trigger button. Styled after the host site's
   // own chat popup (small dark slate bubble, 8px radius, ~12px text, circular
   // close on the corner) because it renders on BwanaBet's page, not in our
@@ -215,6 +263,8 @@
     initialized = true;
     var readySeen = false;
     var loadSeen = false;
+    var initAtMs = Date.now();   // start of the clock the dead-widget report measures against
+    var loadSeenAtMs = 0;
 
     // --- Create floating trigger button ---
     var btn = document.createElement('div');
@@ -516,7 +566,8 @@
     if (overlayFrame) {
       overlayFrame.addEventListener('load', function () {
         loadSeen = true;
-        dbg('iframe fired load');
+        loadSeenAtMs = Date.now();
+        dbg('iframe fired load after', loadSeenAtMs - initAtMs, 'ms');
       });
     }
 
@@ -647,30 +698,59 @@
       if (reportedToday()) return;   // this browser was already decided today
       markReported();                // record the decision before drawing
       if (Math.random() >= ERROR_SAMPLE_RATE) return;
-      dbg('widget never signalled ready within', READY_TIMEOUT_MS, 'ms - iframe blocked or failed to load');
-      try {
-        var payload = JSON.stringify({
-          type: 'widget_never_ready',
-          message: 'no bwanabet-wheel-ready within ' + READY_TIMEOUT_MS + 'ms (iframe load event ' +
-            (loadSeen ? 'fired' : 'never fired') + '; 1-in-' + Math.round(1 / ERROR_SAMPLE_RATE) + ' sample of browsers)',
-          context: location.host,
-          // Attribution: without this a dead widget cannot be tied back to an
-          // account, so there is no way to tell whether the customer lost their
-          // spin. Null when the failure happened before a session was read.
-          customerId: activeCustomerId || null,
-        });
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon(WIDGET_ORIGIN + '/api/telemetry', new Blob([payload], { type: 'text/plain' }));
-        } else {
-          fetch(WIDGET_ORIGIN + '/api/telemetry', {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: payload,
-            keepalive: true,
-          }).catch(function () {});
-        }
-      } catch (e) { /* never break the host page */ }
+      dbg('widget never signalled ready within', READY_TIMEOUT_MS, 'ms - probing the origin to find out why');
+
+      // Probe AFTER the sampling draw, so only the 1-in-20 that actually report
+      // pay for the extra request — and after a grace window, so a slow frame
+      // is not mistaken for a blocked one.
+      setTimeout(function () {
+      probeOrigin(function (reachable, probeMs) {
+        // The widget may have come alive during the grace window. That is a
+        // slow load, not a failure, and the customer got their wheel — there is
+        // nothing to report.
+        if (readySeen) { dbg('widget came alive during the grace window - not reporting'); return; }
+        // Three distinguishable causes, each wanting a different fix:
+        //   frame_blocked      origin fine, iframe never loaded — extension or
+        //                      browser policy blocking third-party frames. A
+        //                      first-party subdomain would sidestep it.
+        //   widget_dead        frame loaded but never signalled ready — widget
+        //                      JS died, or postMessage was blocked. Our bug.
+        //   origin_unreachable requests to the origin are being dropped even
+        //                      though embed.js itself loaded — selective
+        //                      blocking rather than a dead network.
+        var cause = !reachable ? 'origin_unreachable'
+                  : loadSeen ? 'widget_dead'
+                  : 'frame_blocked';
+        dbg('dead-widget cause:', cause, '(probe', reachable ? 'ok' : 'failed', probeMs + 'ms)');
+        try {
+          var payload = JSON.stringify({
+            type: 'widget_never_ready',
+            message: 'cause=' + cause +
+              '; iframeLoad=' + (loadSeen ? 'fired@' + (loadSeenAtMs - initAtMs) + 'ms' : 'never') +
+              '; probe=' + (reachable ? 'ok@' + probeMs + 'ms' : 'failed@' + probeMs + 'ms') +
+              '; net=' + netInfo() +
+              '; waited=' + (READY_TIMEOUT_MS + DIAGNOSE_GRACE_MS) + 'ms' +
+              '; 1-in-' + Math.round(1 / ERROR_SAMPLE_RATE) + ' sample of browsers',
+            context: location.host,
+            // Attribution: without this a dead widget cannot be tied back to an
+            // account, so there is no way to tell whether the customer lost
+            // their spin. Null if the failure preceded reading a session.
+            customerId: activeCustomerId || null,
+          });
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon(WIDGET_ORIGIN + '/api/telemetry', new Blob([payload], { type: 'text/plain' }));
+          } else {
+            fetch(WIDGET_ORIGIN + '/api/telemetry', {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'text/plain' },
+              body: payload,
+              keepalive: true,
+            }).catch(function () {});
+          }
+        } catch (e) { /* never break the host page */ }
+      });
+      }, DIAGNOSE_GRACE_MS);
     }, READY_TIMEOUT_MS);
   }
 
