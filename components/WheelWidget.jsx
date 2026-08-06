@@ -801,25 +801,31 @@ export default function WheelWidget({ prefillUserId = null }) {
               <X className="w-5 h-5 text-white" strokeWidth={3} />
             </button>
 
-            <h1 className="text-3xl font-black tracking-tight leading-[0.9]" style={{
-              background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            {/* No brand line here: the cabinet marquee behind this card already
+                reads BWANABET a few pixels above, and repeating it pushed the
+                actual message down the card. Solid gold rather than the
+                previous gradient fill — gradient text renders unevenly on
+                low-DPI shop monitors and fails outright in a few older mobile
+                browsers, leaving an invisible headline. */}
+            {/* Sized to FIT, not to a nice round number. CONGRATULATIONS! is
+                sixteen characters and cannot wrap, so at 34px it ran past both
+                edges of a 320px card. The card's content box is ~256px on
+                desktop and ~224px on a 320px phone; this clamp keeps the word
+                inside both. Check it renders within the panel if you change the
+                wording — a longer word will need a smaller ceiling. */}
+            {/* mt-5 clears the close button: it sits at top-3 and is 36px tall,
+                so it occupies the first ~48px of the card. The old layout had a
+                brand line absorbing that space. */}
+            <h1 className="font-black leading-[0.9] mt-5" style={{
+              fontSize: 'clamp(18px, 6.4vw, 25px)',
+              letterSpacing: '-0.02em',
+              color: '#ffd700',
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}>BWANABET</h1>
-            <h1 className="text-3xl font-black tracking-tight leading-[0.9] mt-1 mb-1">
-              <span style={{
-                background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-              }}>SPIN</span>{' '}
-              <span className="text-white text-2xl" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))' }}>AND</span>{' '}
-              <span style={{
-                background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-              }}>WIN</span>
-            </h1>
-            <p className="text-white text-sm mt-2 mb-5">Tap below and spin to win!</p>
+            }}>CONGRATULATIONS!</h1>
+            <h2 className="font-black tracking-tight leading-[1.05] mt-2 mb-5 text-white" style={{
+              fontSize: 'clamp(17px, 5.2vw, 22px)',
+              filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
+            }}>YOU GET <span style={{ color: '#ffd700' }}>FREE BONUS!</span></h2>
 
             <button
               type="button"
@@ -1342,12 +1348,18 @@ export default function WheelWidget({ prefillUserId = null }) {
                   screen === 'spinning' ? 'hover:scale-110 active:scale-90 cursor-pointer' : 'cursor-default'
                 }`}
               >
-                <span className={`font-black text-xl sm:text-2xl tracking-wider ${screen !== 'spinning' ? 'opacity-40' : ''}`} style={{
-                  background: 'linear-gradient(180deg, #ff9999 0%, #ef4444 40%, #b91c1c 100%)',
-                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.9))',
+                {/* Two stacked lines so the label fills the round hub. On one
+                    line "PRESS STOP" would have to shrink to fit the circle's
+                    width and would read smaller than the old "STOP" did.
+                    Solid fill rather than the previous gradient: gradient text
+                    renders unevenly at this size on low-DPI shop monitors and
+                    disappears entirely in a few older mobile browsers. */}
+                <span className={`font-black leading-[0.88] text-center tracking-tight ${screen !== 'spinning' ? 'opacity-40' : ''}`} style={{
+                  fontSize: 'clamp(15px, 4.6vw, 21px)',
+                  color: '#ff5f5f',
+                  textShadow: '0 2px 4px rgba(0,0,0,0.95), 0 0 12px rgba(239,68,68,0.45)',
                   ...(screen === 'spinning' ? { animation: 'stopFlash 0.4s ease-in-out infinite' } : {}),
-                }}>STOP</span>
+                }}>PRESS<br />STOP</span>
               </button>
             </div>
           </div>
