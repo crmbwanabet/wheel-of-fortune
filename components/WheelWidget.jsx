@@ -888,7 +888,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                 animation: 'playBtnPulse 2.4s ease-in-out infinite',
               }}
             >
-              <FitText max={72} fill={0.95}>PLAY!</FitText>
+              <FitText max={58} fill={0.95}>PLAY!</FitText>
             </button>
           </div>
         </div>
@@ -1004,7 +1004,7 @@ export default function WheelWidget({ prefillUserId = null }) {
               onClick={handleClose}
               className="w-full py-2.5 px-3 rounded-xl font-black shadow-lg transition-all hover:scale-[1.03] active:scale-95 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-500/20"
             >
-              <FitText max={72} fill={0.95}>GOT IT</FitText>
+              <FitText max={58} fill={0.95}>GOT IT</FitText>
             </button>
           </div>
         </div>
@@ -1405,7 +1405,11 @@ export default function WheelWidget({ prefillUserId = null }) {
                     renders unevenly at this size on low-DPI shop monitors and
                     disappears entirely in a few older mobile browsers. */}
                 <span className={`font-black leading-[0.88] text-center tracking-tight ${screen !== 'spinning' ? 'opacity-40' : ''}`} style={{
-                  fontSize: 'clamp(15px, 4.6vw, 21px)',
+                  // Bounded by the hub's circle, not by its bounding box: text
+                  // near the top and bottom of a round button runs out of width
+                  // long before the square would. Two lines at this size clear
+                  // the curve; going much larger clips on the diagonal.
+                  fontSize: 'clamp(17px, 5.6vw, 26px)',
                   color: '#ff5f5f',
                   textShadow: '0 2px 4px rgba(0,0,0,0.95), 0 0 12px rgba(239,68,68,0.45)',
                   ...(screen === 'spinning' ? { animation: 'stopFlash 0.4s ease-in-out infinite' } : {}),
