@@ -26,6 +26,16 @@ const WHEEL_SEGMENTS = [
 const NUM = WHEEL_SEGMENTS.length;
 const SEG_ANGLE = 360 / NUM;
 
+// The BwanaBet brand yellow, sampled directly from the logo PNG served by the
+// live site (bwanabet-logo-long.png): the dominant colour across 72,294 of its
+// pixels. Every BWANABET wordmark in the widget uses this and nothing else, so
+// the wheel reads as part of the same brand rather than an approximation.
+//
+// The site's REGISTER button is #FFF100 — one unit off in red and green, and
+// visually identical. If you ever need to match chrome rather than the
+// wordmark, that is the other value.
+const BWANA_YELLOW = '#FEF200';
+
 // ============================================================================
 // AUTH ORIGIN ALLOWLIST
 // The widget receives the BwanaBet session token from its parent page via
@@ -825,15 +835,15 @@ export default function WheelWidget({ prefillUserId = null }) {
             <h2 className="font-black tracking-tight leading-[1.05] mt-2 mb-5 text-white" style={{
               fontSize: 'clamp(17px, 5.2vw, 22px)',
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}>YOU GET <span style={{ color: '#ffd700' }}>FREE BONUS!</span></h2>
+            }}>YOU GET FREE BONUS!</h2>
 
             <button
               type="button"
               onClick={startPlaying}
-              className="w-full mt-2 py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95"
+              className="bw-play-pulse w-full mt-2 py-3.5 rounded-xl font-bold text-lg transition-all hover:scale-[1.03] active:scale-95"
               style={{
                 background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                boxShadow: '0 4px 15px rgba(245,158,11,0.3)',
+                animation: 'playBtnPulse 2.4s ease-in-out infinite',
               }}
             >
               Play!
@@ -1029,9 +1039,12 @@ export default function WheelWidget({ prefillUserId = null }) {
 
           {/* Header */}
           <div className="text-center mb-2">
+            {/* BWANA_YELLOW, sampled from the logo PNG on the live site — the
+                dominant colour across 72,294 of its pixels. Note the site's
+                REGISTER button uses #FFF100, a shade off; this follows the
+                logo, which is what the wordmark should match. */}
             <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-[0.9]" style={{
-              background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
             }}>BWANABET</h1>
             <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-[0.9] mt-1">
