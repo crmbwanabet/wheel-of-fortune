@@ -28,6 +28,13 @@
   var PROBE_PATH = '/ping.txt';
   var PROBE_TIMEOUT_MS = 5000;
 
+  // A probe that FAILS FAST was refused by something — an extension rule or a
+  // DNS block rejects in tens of milliseconds. A probe that runs out the clock
+  // was not refused; it was just slow. Treating those as the same thing is what
+  // produced two bogus "origin_unreachable" reports on 3g, where the probe
+  // simply hit its 5s ceiling. Anything under this is a real refusal.
+  var PROBE_REFUSED_MS = 1500;
+
   // Extra observation time before deciding WHY the widget is dead.
   //
   // Classifying at the 15s mark reads a snapshot, and a snapshot cannot tell a
@@ -709,25 +716,48 @@
         // slow load, not a failure, and the customer got their wheel — there is
         // nothing to report.
         if (readySeen) { dbg('widget came alive during the grace window - not reporting'); return; }
-        // Three distinguishable causes, each wanting a different fix:
-        //   frame_blocked      origin fine, iframe never loaded — extension or
-        //                      browser policy blocking third-party frames. A
-        //                      first-party subdomain would sidestep it.
-        //   widget_dead        frame loaded but never signalled ready — widget
-        //                      JS died, or postMessage was blocked. Our bug.
-        //   origin_unreachable requests to the origin are being dropped even
-        //                      though embed.js itself loaded — selective
-        //                      blocking rather than a dead network.
-        var cause = !reachable ? 'origin_unreachable'
-                  : loadSeen ? 'widget_dead'
-                  : 'frame_blocked';
-        dbg('dead-widget cause:', cause, '(probe', reachable ? 'ok' : 'failed', probeMs + 'ms)');
+        // These names describe what was OBSERVED, not what caused it. That
+        // distinction is the whole point of this rewrite.
+        //
+        // The first version named inferred causes — origin_unreachable,
+        // frame_blocked — and the names turned out to be wrong in production:
+        // two "origin_unreachable" reports were 3g connections that simply hit
+        // the 5s probe ceiling. Reading them literally would have sent us
+        // building a subdomain to fix a slow network.
+        //
+        // A label that asserts a cause gets believed. A label that states an
+        // observation has to be interpreted, which is correct here because the
+        // evidence genuinely does not determine the cause. Read them with the
+        // net= field alongside:
+        //
+        //   probe_refused        no answer, failed fast. Usually an extension
+        //                        rule — but a cached negative DNS also fails
+        //                        fast, so it is not proof.
+        //   probe_timeout        no answer within the ceiling. On 3g this is
+        //                        very likely just slow; on 4g it is suspicious.
+        //   frame_never_loaded   origin answered promptly, frame never arrived.
+        //                        The strongest third-party-frame-blocking
+        //                        signal we have, and the case a first-party
+        //                        subdomain would fix.
+        //   frame_loaded_late    frame arrived, but after the deadline. It was
+        //                        still booting, not dead.
+        //   no_ready_after_load  frame arrived promptly and still never
+        //                        signalled. This one points at our own JS.
+        var probeOutcome = reachable ? 'ok'
+                         : (probeMs < PROBE_REFUSED_MS ? 'refused' : 'timeout');
+        var loadMs = loadSeen ? (loadSeenAtMs - initAtMs) : 0;
+        var cause = probeOutcome === 'refused' ? 'probe_refused'
+                  : probeOutcome === 'timeout' ? 'probe_timeout'
+                  : !loadSeen ? 'frame_never_loaded'
+                  : loadMs > READY_TIMEOUT_MS ? 'frame_loaded_late'
+                  : 'no_ready_after_load';
+        dbg('dead-widget cause:', cause, '(probe', probeOutcome, probeMs + 'ms)');
         try {
           var payload = JSON.stringify({
             type: 'widget_never_ready',
             message: 'cause=' + cause +
               '; iframeLoad=' + (loadSeen ? 'fired@' + (loadSeenAtMs - initAtMs) + 'ms' : 'never') +
-              '; probe=' + (reachable ? 'ok@' + probeMs + 'ms' : 'failed@' + probeMs + 'ms') +
+              '; probe=' + probeOutcome + '@' + probeMs + 'ms' +
               '; net=' + netInfo() +
               '; waited=' + (READY_TIMEOUT_MS + DIAGNOSE_GRACE_MS) + 'ms' +
               '; 1-in-' + Math.round(1 / ERROR_SAMPLE_RATE) + ' sample of browsers',
