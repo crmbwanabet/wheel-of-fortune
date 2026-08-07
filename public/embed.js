@@ -35,6 +35,13 @@
   // simply hit its 5s ceiling. Anything under this is a real refusal.
   var PROBE_REFUSED_MS = 1500;
 
+  // Above this, the link is degraded — the probe fetches TWO BYTES, so anything
+  // slower than a couple of seconds says more about the connection than about
+  // the widget. Reported as its own field because the cause label describes the
+  // frame, and without this a customer on a crawling 3g link (observed: probe
+  // 4861ms, iframe 13.5s) gets filed under a cause that implicates our own JS.
+  var PROBE_SLOW_MS = 2000;
+
   // Extra observation time before deciding WHY the widget is dead.
   //
   // Classifying at the 15s mark reads a snapshot, and a snapshot cannot tell a
@@ -758,6 +765,7 @@
             message: 'cause=' + cause +
               '; iframeLoad=' + (loadSeen ? 'fired@' + (loadSeenAtMs - initAtMs) + 'ms' : 'never') +
               '; probe=' + probeOutcome + '@' + probeMs + 'ms' +
+              '; link=' + (reachable && probeMs > PROBE_SLOW_MS ? 'degraded' : reachable ? 'ok' : 'none') +
               '; net=' + netInfo() +
               '; waited=' + (READY_TIMEOUT_MS + DIAGNOSE_GRACE_MS) + 'ms' +
               '; 1-in-' + Math.round(1 / ERROR_SAMPLE_RATE) + ' sample of browsers',
