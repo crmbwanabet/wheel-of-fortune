@@ -33,7 +33,10 @@ export async function POST(request) {
       code: type,
       source: 'widget',
       customerId,
-      extra: typeof body.context === 'string' ? body.context.slice(0, 200) : undefined,
+      // The page the widget was embedded on. Recorded, not trusted — it is the
+      // only thing that separates a real customer failure on bwanabet.com from
+      // someone testing against production from localhost or a preview deploy.
+      host: typeof body.context === 'string' ? body.context.slice(0, 200) : undefined,
     }));
     return NextResponse.json({ ok: true });
   } catch (err) {
