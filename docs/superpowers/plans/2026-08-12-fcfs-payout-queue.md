@@ -998,7 +998,7 @@ Report to the user:
 - SQL + preview test results (pop order, gate, exhaustion, backfill)
 - Reminder that prod is still on positions mode and main is untouched
 
-**Wait for the stakeholder's explicit approval on the preview page.** Only after approval: merge to main (fast-forward or PR per their preference), and only after THAT flip `WHEEL_PAYOUT_MODE=queue` + `DEPOSIT_WINDOW_DAYS=7` in the **Production** env scope as a separate, reversible step.
+**Wait for the stakeholder's explicit approval on the preview page.** Only after approval: merge to main (fast-forward or PR per their preference), and only after THAT flip `WHEEL_PAYOUT_MODE=queue` + `DEPOSIT_WINDOW_DAYS=7` in the **Production** env scope as a separate, reversible step. **Before flipping, confirm `DEPOSIT_GATE_MODE=enforce` in Production** — queue mode with the gate off/shadow treats every spinner as eligible and the first ~100 spins win regardless of deposits.
 
 ---
 
