@@ -71,8 +71,21 @@ DECLARE
   v_prev_day date;
   v_carry_in jsonb;
   v_inserted int := 0;
+  v_queue_ok boolean;
 BEGIN
   v_seqname := format('wheel_seq_%s_%s', to_char(p_day, 'YYYYMMDD'), substr(md5(p_bucket), 1, 8));
+
+  -- A prize queue is adopted only if it is a jsonb ARRAY whose every element
+  -- is one of the five valid prize amounts. Guards against a malformed payload
+  -- jamming the day (un-castable element ⇒ every pop raises) or silently
+  -- NULLing the budget counter (JSON null element).
+  v_queue_ok := COALESCE(
+    jsonb_typeof(p_prize_queue) = 'array'
+    AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(p_prize_queue) e
+      WHERE jsonb_typeof(e) <> 'number'
+         OR NOT (e::text)::numeric IN (10, 20, 50, 100, 200)
+    ), false);
 
   IF NOT EXISTS (
     SELECT 1 FROM wheel_daily_state WHERE day_date = p_day AND test_bucket = p_bucket
@@ -108,9 +121,7 @@ BEGIN
     ) VALUES (
       p_day, p_bucket, p_algorithm_id, p_winning_positions, 0, 0, 0,
       v_carry_in, v_carry_in,
-      -- Adopt the queue only when it is actually a jsonb ARRAY — a malformed
-      -- payload must not poison the whole bucket-day.
-      CASE WHEN jsonb_typeof(p_prize_queue) = 'array' THEN p_prize_queue ELSE NULL END, 0
+      CASE WHEN v_queue_ok THEN p_prize_queue ELSE NULL END, 0
     )
     ON CONFLICT (day_date, test_bucket) DO NOTHING;
 
@@ -147,7 +158,7 @@ BEGIN
   -- queue; adopt the caller's on the first queue-mode spin. No-op once set.
   -- Placed AFTER the dedupe section so the day-row lock is always taken after
   -- the advisory locks (consistent lock ordering — no deadlock window).
-  IF p_payout_mode = 'queue' AND jsonb_typeof(p_prize_queue) = 'array' THEN
+  IF p_payout_mode = 'queue' AND v_queue_ok THEN
     UPDATE wheel_daily_state SET prize_queue = p_prize_queue
     WHERE day_date = p_day AND test_bucket = p_bucket AND prize_queue IS NULL;
   END IF;
@@ -223,7 +234,9 @@ BEGIN
 
   -- Winner cooldown, positions/forced paths only (queue handled the cooldown
   -- before its pop): a recent winner's would-be win becomes a loss and the
-  -- prize carries over.
+  -- prize carries over. NOTE: in queue mode a p_force_prize win intentionally
+  -- bypasses the cooldown — forced prizes are test-token-gated and "forced
+  -- means forced"; positions mode keeps the live baseline behaviour.
   IF p_payout_mode <> 'queue' AND v_is_win AND p_cooldown_days > 0 AND NOT p_skip_dedupe THEN
     SELECT EXISTS (
       SELECT 1 FROM wheel_spin_log
