@@ -44,16 +44,38 @@ async function handleDigest(request) {
     if (spins === 0) {
       text = `📊 Wheel daily digest — ${day}\nQuiet day: 0 spins.`;
     } else {
-      const beyond = Math.max(0, spins - WINNABLE_POSITIONS);
-      const spinsLine = beyond > 0
-        ? `Spins: ${spins} (first ${WINNABLE_POSITIONS} winnable, ${beyond} past cap)`
-        : `Spins: ${spins} / ${WINNABLE_POSITIONS} winnable`;
+      const queueMode = process.env.WHEEL_PAYOUT_MODE === 'queue';
+      let spinsLine;
+      let exhaustLine = null;
+      if (queueMode) {
+        spinsLine = `Spins: ${spins}`;
+        // Pot exhausted = the 100th win. Its timestamp tells us when the day's
+        // K2,000 ran out (spec: expected ~06:45 CAT at current traffic).
+        if ((state?.total_wins ?? 0) >= 100) {
+          const { data: hundredth } = await supabase
+            .from('wheel_spin_log')
+            .select('created_at')
+            .eq('day_date', day).eq('test_bucket', '').eq('won', true)
+            .order('created_at', { ascending: true })
+            .range(99, 99);
+          if (hundredth?.[0]?.created_at) {
+            const catMs = Date.parse(hundredth[0].created_at) + 2 * 60 * 60 * 1000;
+            exhaustLine = `Pot exhausted at ${new Date(catMs).toISOString().slice(11, 16)} CAT`;
+          }
+        }
+      } else {
+        const beyond = Math.max(0, spins - WINNABLE_POSITIONS);
+        spinsLine = beyond > 0
+          ? `Spins: ${spins} (first ${WINNABLE_POSITIONS} winnable, ${beyond} past cap)`
+          : `Spins: ${spins} / ${WINNABLE_POSITIONS} winnable`;
+      }
       text = [
         `📊 Wheel daily digest — ${day}`,
         spinsLine,
         `Wins: ${state?.total_wins ?? 0} → K${state?.total_budget_spent ?? 0} / K2,000 budget`,
+        exhaustLine,
         `(errors delivered live; see alerts)`,
-      ].join('\n');
+      ].filter(Boolean).join('\n');
     }
   } catch (err) {
     text = `📊 Wheel daily digest — ${day}\n⚠️ digest read failed: ${(err && err.message) || 'error'}`;
