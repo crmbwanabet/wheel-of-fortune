@@ -29,6 +29,7 @@ Two changes, decided with the stakeholder on 2026-08-12:
 | Prize mix | Existing 5 algorithms (K10/20/50/100/200, 100 prizes, K2,000 exact) |
 | Exhausted-pot UX | Silent — indistinguishable from a normal loss; no widget change |
 | Qualifying window | Deposit in the previous 7 wheel-days **or today-so-far** (up to the spin moment) |
+| Winner cooldown | **Preserved in queue mode** (decided 2026-08-12): a customer who won in the last `p_cooldown_days` (3) wheel-days is skipped — their spin loses and the prize stays in the queue for the next eligible spinner |
 | Rollout | Feature branch → Vercel preview → test → merge. **No push to main until preview-tested.** |
 
 ### Accepted consequences (stated to stakeholder, accepted)
@@ -118,6 +119,28 @@ Replaces the 10,000-slot position map (in queue mode):
   queue array via a new `p_prize_queue jsonb DEFAULT NULL` param — day-init
   stores whichever the mode needs. Both are generated per-request as today
   (only the first spin of the day actually persists one).
+
+### Prod-drift discovery (2026-08-12, during implementation)
+
+The LIVE `claim_spin` in prod is an 11-arg version with a **winner cooldown +
+prize carryover** system applied directly to prod (deliberately, per
+stakeholder) and never committed to the repo:
+
+- `p_cooldown_days` (default 3): won in the last 3 wheel-days ⇒ a would-be win
+  becomes a loss (`forced_loss_cooldown`), prize pushed to
+  `wheel_daily_state.carryover_prizes`.
+- Day-init pulls ≤10 carryover prizes from the most recent prior day (≤7 days
+  back); eligible losing non-cooldown spinners can claim one
+  (`carryover_awarded`).
+- `wheel_spin_log` has `cooldown_blocked` / `carryover_awarded` columns.
+
+Snapshot: `docs/db/2026-08-12-prod-claim-spin-baseline.sql`. The migration is
+rebased on this live body. **Queue-mode integration:** the cooldown gates the
+pop (recent winner ⇒ loss, prize remains in queue — no carryover write);
+carryover award + carryover push are gated to positions mode only, keeping the
+queue-day payout exactly K2,000. The new function drops the live 11-arg
+signature (leaving it would make PostgREST named-arg calls ambiguous) and, as
+hardening, revokes EXECUTE from PUBLIC/anon/authenticated (service_role only).
 
 ### Migration (`supabase/migrations/2026-08-12-fcfs-payout-queue.sql`)
 

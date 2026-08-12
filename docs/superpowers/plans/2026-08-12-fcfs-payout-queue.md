@@ -1002,6 +1002,31 @@ Report to the user:
 
 ---
 
+## REVISION 2026-08-12 (supersedes parts of Tasks 5 and 9)
+
+During execution, review + a live-DB check revealed the migrations directory had
+drifted from prod: the LIVE `claim_spin` is an 11-arg version with a winner
+cooldown (`p_cooldown_days` default 3) and prize-carryover system, snapshotted
+to `docs/db/2026-08-12-prod-claim-spin-baseline.sql`. Task 5's SQL as originally
+written in this plan is therefore WRONG (it would leave the live 11-arg function
+in place → PostgREST named-arg ambiguity → prod outage, and would revert the
+customer-only dedupe). The committed migration file is the corrected authority;
+key deltas vs the plan text above:
+
+- Rebased on the live 11-arg body (customer-only dedupe, cooldown, carryover).
+- New signature is 13 args (`p_cooldown_days` retained before `p_payout_mode`,
+  `p_prize_queue`); DROPs both the 10-arg repo signature and the 11-arg live one.
+- Queue mode: cooldown gates the pop (stakeholder decision 2026-08-12) — recent
+  winner ⇒ loss, prize stays in queue; carryover push/award gated to positions
+  mode so queue days pay out exactly the K2,000 pot.
+- Hardening: REVOKE EXECUTE from PUBLIC/anon/authenticated; only service_role.
+- `SET LOCAL lock_timeout = '3s'`; jsonb array-type guard on `p_prize_queue`;
+  backfill moved after the dedupe section (lock-ordering).
+- Task 9 verification must additionally cover: queue+cooldown (a customer with a
+  win in the last 3 days pops nothing and the queue does not advance), and the
+  positions default preserving cooldown/carryover. Expected default-call return
+  now includes `forced_loss_cooldown` / `carryover_awarded` fields.
+
 ## Rollback
 
 - **Anytime, instantly:** set Production `WHEEL_PAYOUT_MODE=positions` (or remove the var) → legacy behaviour, no DB change needed. Both structures are stored per day, so a mid-day flip in either direction keeps working.
