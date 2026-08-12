@@ -6,6 +6,7 @@ import {
   getWheelDayDate,
   pickAlgorithm,
   buildWinningMap,
+  generatePrizePool,
 } from '@/lib/algorithms';
 import { sendWinNotification } from '@/lib/telegram';
 import { verifyBwanaToken, TokenError } from '@/lib/bwanaAuth.mjs';
@@ -23,6 +24,11 @@ export const dynamic = 'force-dynamic';
 const DEPOSIT_GATE_MODE = process.env.DEPOSIT_GATE_MODE || 'off';
 const DEPOSIT_CHECK_TIMEOUT_MS = Number(process.env.DEPOSIT_CHECK_TIMEOUT_MS) || 2000;
 const DEPOSIT_CHECK_BG_CAP_MS = Number(process.env.DEPOSIT_CHECK_BG_CAP_MS) || 10000;
+
+// Payout mode: 'positions' = scattered winning slots (legacy); 'queue' = FCFS
+// prize queue — every eligible spin wins until the day's pot is empty. See
+// spec 2026-08-12-fcfs-payout-queue-design.md. Env-flip = instant rollback.
+const WHEEL_PAYOUT_MODE = process.env.WHEEL_PAYOUT_MODE === 'queue' ? 'queue' : 'positions';
 
 // Spin rate limit (per IP). Raised well above the old 5/min because many
 // legitimate customers share carrier-NAT / store IPs — per-customer abuse is
@@ -86,6 +92,10 @@ async function handleSpin(request) {
   const dayDate = getWheelDayDate();
   const algorithmId = pickAlgorithm();
   const winningPositions = buildWinningMap(algorithmId);
+  // Shuffled 100-prize queue (K2,000 exact). Sent on every spin, but only the
+  // day's FIRST spin persists it (day-init); both structures are stored so a
+  // mid-day WHEEL_PAYOUT_MODE flip works in either direction.
+  const prizeQueue = generatePrizePool(algorithmId);
 
   const supabase = getSupabase();
 
@@ -130,6 +140,8 @@ async function handleSpin(request) {
     p_skip_dedupe: skipDedupe,
     p_force_prize: forceWin,
     p_eligible: effectiveEligible,
+    p_payout_mode: WHEEL_PAYOUT_MODE,
+    p_prize_queue: prizeQueue,
   });
   if (claimErr) {
     if (claimErr.code === '57014') {
@@ -163,6 +175,7 @@ async function handleSpin(request) {
         winsToday: result.wins_today,
         budgetSpent: result.budget_today,
         spinNumber: result.spin_number,
+        payoutMode: WHEEL_PAYOUT_MODE,
       }).catch(err => console.error('[spin] Telegram notify failed:', err?.message))
     );
   }
