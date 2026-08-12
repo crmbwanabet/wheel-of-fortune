@@ -12,6 +12,7 @@ import { sendWinNotification } from '@/lib/telegram';
 import { verifyBwanaToken, TokenError } from '@/lib/bwanaAuth.mjs';
 import { reportError } from '@/lib/telemetry';
 import { checkDepositEligibility } from '@/lib/depositCheck';
+import { resolveCooldownDays } from '@/lib/cooldown';
 
 // Colocate with the Supabase database (eu-west-1 / Dublin) to remove
 // cross-region round trips from every query on the hot path.
@@ -36,6 +37,10 @@ const WHEEL_PAYOUT_MODE = process.env.WHEEL_PAYOUT_MODE === 'queue' ? 'queue' : 
 // against a single IP flooding the DB. Env-tunable without a redeploy.
 const SPIN_RATE_LIMIT = Number(process.env.SPIN_RATE_LIMIT) || 60;
 const SPIN_RATE_WINDOW_SEC = Number(process.env.SPIN_RATE_WINDOW_SEC) || 60;
+
+// Win cooldown: a customer who won on wheel-day D cannot win on D+1..D+N.
+// Env-tunable without a migration; 0 disables the rule (and carry-over with it).
+const SPIN_COOLDOWN_DAYS = resolveCooldownDays(process.env.SPIN_COOLDOWN_DAYS);
 
 async function handleSpin(request) {
   // Kill-switch: when set, return immediately WITHOUT touching the database.
@@ -140,6 +145,7 @@ async function handleSpin(request) {
     p_skip_dedupe: skipDedupe,
     p_force_prize: forceWin,
     p_eligible: effectiveEligible,
+    p_cooldown_days: SPIN_COOLDOWN_DAYS,
     p_payout_mode: WHEEL_PAYOUT_MODE,
     p_prize_queue: prizeQueue,
   });

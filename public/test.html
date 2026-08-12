@@ -42,6 +42,36 @@
     .fake-card { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 20px; }
     .fake-card .title { font-size: 14px; color: #aaa; margin-bottom: 8px; }
     .fake-card .value { font-size: 24px; font-weight: 700; color: white; }
+
+    /* ------------------------------------------------------------------
+       REPRODUCE THE REAL HOST PAGE.
+
+       embed.js styles the trigger `right:16px; top:50%`, but bwanabet.com's
+       own stylesheet overrides that and renders it BOTTOM-LEFT (measured
+       2026-08-05: x=20, y=619 on a 1210x703 viewport, computed top 619.34px).
+
+       This harness used to show the button where our CSS said, so it could not
+       catch anything that depended on the button's real position — which is
+       exactly how the promo bubble shipped anchored to the wrong corner and
+       landed on top of the site's chatbot. Keep this override in place.
+       ------------------------------------------------------------------ */
+    #bwanabet-wheel-trigger {
+      top: auto !important;
+      bottom: 20px !important;
+      left: 20px !important;
+      right: auto !important;
+      transform: none !important;
+    }
+
+    /* Stand-in for the site's AI BOT chat button: bottom-right, very high
+       z-index. Anything we add must not collide with it. */
+    #fake-chatbot {
+      position: fixed; right: 16px; bottom: 16px; width: 64px; height: 60px;
+      border-radius: 50%; background: #fff100; color: #111; z-index: 1000003;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 800; text-align: center; line-height: 1.1;
+      box-shadow: 0 4px 14px rgba(0,0,0,.5); pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -50,6 +80,9 @@
     <h1>BwanaBet Widget Test</h1>
     <span>Simulated host page for embed testing</span>
   </div>
+
+  <!-- Mimics the site's AI BOT button so collisions show up here, not in prod. -->
+  <div id="fake-chatbot">AI<br>BOT</div>
 
   <div class="content">
 

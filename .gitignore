@@ -43,3 +43,6 @@ next-env.d.ts
 
 # git worktrees for isolated feature work
 .worktrees/
+
+# visual brainstorming scratch (superpowers)
+.superpowers/

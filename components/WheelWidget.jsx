@@ -4,6 +4,8 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { generateFingerprint } from '@/lib/fingerprint';
 import { hasSpun, withSpun } from '@/lib/spunCache.mjs';
+import { decideAvailability } from '@/lib/availability.mjs';
+import { msUntilNextWheelReset, splitCountdown } from '@/lib/countdown';
 
 // ============================================================================
 // DATA — 10 segments: K10, K20, K50, K100, K200, Try Again Tomorrow ×5
@@ -24,6 +26,25 @@ const WHEEL_SEGMENTS = [
 const NUM = WHEEL_SEGMENTS.length;
 const SEG_ANGLE = 360 / NUM;
 
+// The BwanaBet brand yellow, sampled directly from the logo PNG served by the
+// live site (bwanabet-logo-long.png): the dominant colour across 72,294 of its
+// pixels. Every BWANABET wordmark in the widget uses this and nothing else, so
+// the wheel reads as part of the same brand rather than an approximation.
+//
+// The site's REGISTER button is #FFF100 — one unit off in red and green, and
+// visually identical. If you ever need to match chrome rather than the
+// wordmark, that is the other value.
+const BWANA_YELLOW = '#FEF200';
+
+// window.onerror messages that are not worth an alert. Each report costs a
+// Telegram message to the owner and a write to the database shared with the
+// CRM, so anything that fires routinely and means nothing has to be excluded
+// or the channel stops being read.
+const IGNORED_WINDOW_ERRORS = [
+  'ResizeObserver loop',        // browser deferring a notification; harmless
+  'Script error.',              // cross-origin script with no detail attached
+];
+
 // ============================================================================
 // AUTH ORIGIN ALLOWLIST
 // The widget receives the BwanaBet session token from its parent page via
@@ -34,6 +55,11 @@ const SEG_ANGLE = 360 / NUM;
 const ALLOWED_AUTH_ORIGINS = new Set([
   'https://bwanabet.com',
   'https://bwanabet.co.zm',
+  // `www.` variants: www.bwanabet.com currently 301s to the apex and
+  // www.bwanabet.co.zm 404s, but if either ever serves the site directly the
+  // token would be silently dropped and the wheel would never appear.
+  'https://www.bwanabet.com',
+  'https://www.bwanabet.co.zm',
   // TEMPORARY (2026-07-21): BwanaBet dev environment for pre-launch widget
   // testing. Remove once the team confirms testing is done.
   'https://dev-bwanabet.energaming.services',
@@ -48,6 +74,14 @@ function isAllowedAuthOrigin(origin) {
 // LOCALSTORAGE — 6am CAT reset
 // ============================================================================
 const STORAGE_KEY = 'bwanabet_wheel_spin';
+
+// Availability check timeout. Without this a HANG (as opposed to an error)
+// means the widget never posts a verdict and the trigger button never appears
+// until a full page reload — the `checked` latch prevents any retry.
+// Note the budget starts before `await fpPromise`, so it nominally covers
+// fingerprint generation too — in practice that promise starts at mount and has
+// long settled by the time an auth token arrives.
+const STATUS_TIMEOUT_MS = 4000;
 
 function getWheelDayClient() {
   const now = new Date();
@@ -116,7 +150,7 @@ async function postSpinWithRetry(body) {
 // Best-effort client error reporter → /api/telemetry. Deduped to one report
 // per signature per page load; fully fire-and-forget (never throws/awaits).
 const _reportedSigs = new Set();
-function reportClientError(type, message, context) {
+function reportClientError(type, message, context, customerId) {
   try {
     const sig = `${type}:${String(message).slice(0, 80)}`;
     if (_reportedSigs.has(sig)) return;
@@ -124,10 +158,78 @@ function reportClientError(type, message, context) {
     fetch('/api/telemetry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, message: String(message).slice(0, 500), context }),
+      // customerId matters most on spin_network_error: the server may have
+      // recorded the spin while the response never reached the phone, so the
+      // customer used their spin and saw a failure. Without the account there
+      // is no way to find those people afterwards.
+      body: JSON.stringify({
+        type,
+        message: String(message).slice(0, 500),
+        context,
+        customerId: customerId != null ? String(customerId) : null,
+      }),
       keepalive: true,
     }).catch(() => {});
   } catch { /* never break the widget */ }
+}
+
+// Scales its text to fill the width of its parent button.
+//
+// Hand-tuning a font size per label looks fine until the wording changes — and
+// these labels have changed repeatedly. This measures instead: render at `max`,
+// read the natural width, then scale to `fill` of the space available. Re-runs
+// when the text changes and when the button resizes, so it survives both new
+// copy and a rotated phone.
+//
+// `min` is a floor, not a target: a long label shrinks to fit rather than
+// overflowing, which is the failure mode that matters on a 320px screen.
+function FitText({ children, max = 32, min = 13, fill = 0.9, className = '', style = {} }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    const parent = el && el.parentElement;
+    if (!el || !parent) return;
+    let raf = 0;
+    let applied = null;
+    const fit = () => {
+      el.style.fontSize = `${max}px`;
+      const natural = el.scrollWidth;
+      const avail = parent.clientWidth * fill;
+      if (!natural || !avail) { if (applied != null) el.style.fontSize = `${applied}px`; return; }
+      const next = Math.max(min, Math.min(max, max * (avail / natural)));
+      const rounded = Number(next.toFixed(1));
+      applied = rounded;
+      el.style.fontSize = `${rounded}px`;
+    };
+    fit();
+    if (typeof ResizeObserver === 'undefined') return;
+    // Deferred to the next frame, and skipped when the size would not change.
+    //
+    // Measuring resets font-size to `max`, which resizes this element, which
+    // the observer sees — a loop. Browsers break it by dropping notifications
+    // and firing "ResizeObserver loop completed with undelivered
+    // notifications", which this widget's window.onerror handler then reports
+    // to Telegram and the shared database. Four of those landed in production
+    // telemetry within two hours of the first deploy.
+    const onResize = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const before = applied;
+        fit();
+        if (applied === before) return;   // nothing moved; don't churn
+      });
+    };
+    const ro = new ResizeObserver(onResize);
+    ro.observe(parent);
+    return () => { if (raf) cancelAnimationFrame(raf); ro.disconnect(); };
+  }, [children, max, min, fill]);
+  return (
+    <span ref={ref} className={className}
+      style={{ display: 'block', whiteSpace: 'nowrap', lineHeight: 1.05, ...style }}>
+      {children}
+    </span>
+  );
 }
 
 // ============================================================================
@@ -206,6 +308,17 @@ export default function WheelWidget({ prefillUserId = null }) {
   const [shaking, setShaking] = useState(false);
   const [showSlowingText, setShowSlowingText] = useState(false);
   const [prizeFlash, setPrizeFlash] = useState(false);
+
+  // Countdown to the next free spin, shown on the loss card. Hours and minutes
+  // only — seconds on a fourteen-hour wait are noise and would force a re-render
+  // every second for nothing. Recomputed on the minute from a pure function.
+  const [resetIn, setResetIn] = useState(() => splitCountdown(msUntilNextWheelReset(Date.now())));
+  useEffect(() => {
+    const tick = () => setResetIn(splitCountdown(msUntilNextWheelReset(Date.now())));
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const fingerprintRef = useRef(null);
   const authTokenRef = useRef(null); // raw BwanaBet JWT, received from parent via postMessage
@@ -322,33 +435,61 @@ export default function WheelWidget({ prefillUserId = null }) {
 
       const customerId = customerIdFromToken(token);
       let available = !hasSpunToday(customerId);
+      // The widget's own cache is only ever written for a genuine already-spun
+      // (below, and on a real /api/spin result), so a hit here is authoritative
+      // and never transient. That invariant is what makes this line correct.
+      let sticky = !available;
+
       if (available) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), STATUS_TIMEOUT_MS);
         try {
           const fp = await fpPromise;
           const res = await fetch('/api/spin-status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token, fingerprint: fp }),
+            signal: controller.signal,
           });
-          const data = await res.json();
-          available = data.available !== false;
+          const body = await res.json().catch(() => null);
+          const verdict = decideAvailability({ status: res.status, body });
+          available = verdict.available;
+          sticky = verdict.sticky;
         } catch {
-          // Fail open — /api/spin still enforces the daily claim atomically.
+          // Timeout or network error — fail open. /api/spin still enforces the
+          // daily claim atomically, so this cannot produce a double spin.
+          available = true;
+          sticky = false;
+        } finally {
+          clearTimeout(timer);
         }
       }
 
       if (available) {
         setScreen('prompt');
       } else {
-        markSpun(customerId); // sync localStorage so future page loads skip the check
+        // Only persist a verdict that genuinely means "you already spun today".
+        // Maintenance mode and auth failures are transient and must not suppress
+        // the wheel for the rest of the wheel-day.
+        if (sticky) markSpun(customerId);
         setScreen('done');
       }
-      window.parent.postMessage({ type: 'bwanabet-wheel-available', available }, '*');
+      window.parent.postMessage({ type: 'bwanabet-wheel-available', available, sticky, customerId }, '*');
     };
 
     const onMessage = (e) => {
       // Only trust a token from a known BwanaBet origin (or our own origin).
-      if (!isAllowedAuthOrigin(e.origin)) return;
+      if (!isAllowedAuthOrigin(e.origin)) {
+        // Silent rejection was a blind spot: an unrecognised host origin drops
+        // the token, so availability never resolves and the trigger button
+        // never appears. Only warn for auth attempts — unrelated scripts on the
+        // host page postMessage constantly and would drown this out.
+        if (e.data?.type === 'bwanabet-auth') {
+          console.warn('[wheel] auth token REJECTED from origin', e.origin,
+            '- add it to ALLOWED_AUTH_ORIGINS if this is a genuine BwanaBet host');
+        }
+        return;
+      }
       if (e.data?.type === 'bwanabet-auth' && typeof e.data.token === 'string' && e.data.token) {
         authTokenRef.current = e.data.token;
         // embed.js re-sends auth every time it re-opens the overlay (it reuses
@@ -375,7 +516,15 @@ export default function WheelWidget({ prefillUserId = null }) {
   // Report uncaught client-side JS errors and promise rejections to telemetry.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const onError = (e) => reportClientError('window_error', e?.message || 'error', e?.filename);
+    const onError = (e) => {
+      // Benign browser noise that costs a Telegram alert and a row in the
+      // shared CRM database every time it fires. "ResizeObserver loop..." is
+      // the browser telling itself it deferred a notification; nothing is
+      // broken and no customer sees anything. Industry error trackers filter it
+      // by default for the same reason.
+      if (IGNORED_WINDOW_ERRORS.some(p => (e?.message || '').includes(p))) return;
+      reportClientError('window_error', e?.message || 'error', e?.filename);
+    };
     const onRejection = (e) => reportClientError('unhandled_rejection', e?.reason?.message || String(e?.reason), null);
     window.addEventListener('error', onError);
     window.addEventListener('unhandledrejection', onRejection);
@@ -593,7 +742,7 @@ export default function WheelWidget({ prefillUserId = null }) {
           return;
         }
         if (data.error) {
-          reportClientError('spin_failed', data.error || 'unknown', null);
+          reportClientError('spin_failed', data.error || 'unknown', null, spunCustomerId);
           // Land on a random loss segment on error too
           const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
           const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
@@ -606,7 +755,7 @@ export default function WheelWidget({ prefillUserId = null }) {
         pendingResultRef.current = { winIndex: data.segmentIndex, data };
       })
       .catch(() => {
-        reportClientError('spin_network_error', 'spin request failed', null);
+        reportClientError('spin_network_error', 'spin request failed', null, spunCustomerId);
         // Land on a random loss segment on network error
         const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
         const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
@@ -633,10 +782,15 @@ export default function WheelWidget({ prefillUserId = null }) {
     window.parent.postMessage({ type: 'bwanabet-wheel-close' }, '*');
   }, []);
 
-  // Notify parent when user has spun (result or done screen)
+  // Notify parent when user has spun (result or done screen). Carries the
+  // account this result belongs to: embed.js caches "spun today" against
+  // whoever is active when the message lands, and on a shared computer the
+  // logged-in account can change in between — caching it against the wrong
+  // customer costs them their spin. Null in test mode, where there is no token.
   useEffect(() => {
     if (screen === 'result' || screen === 'done') {
-      window.parent.postMessage({ type: 'bwanabet-wheel-spun' }, '*');
+      const customerId = customerIdFromToken(authTokenRef.current);
+      window.parent.postMessage({ type: 'bwanabet-wheel-spun', customerId }, '*');
     }
   }, [screen]);
 
@@ -707,7 +861,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       {/* ============================================================ */}
       {screen === 'needLogin' && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
-          <div className="relative text-center p-8 rounded-2xl max-w-xs w-full mx-4" style={{
+          <div className="relative text-center px-3 py-6 rounded-2xl max-w-xs w-full mx-4" style={{
             background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
             border: '3px solid #3a3f52',
             boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
@@ -730,7 +884,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       {/* ============================================================ */}
       {screen === 'prompt' && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)', animation: 'fadeIn 0.3s ease-out' }}>
-          <div className="relative text-center p-8 rounded-2xl max-w-xs w-full mx-4" style={{
+          <div className="relative text-center px-3 py-6 rounded-2xl max-w-xs w-full mx-4" style={{
             background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
             border: '3px solid #3a3f52',
             boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
@@ -742,36 +896,46 @@ export default function WheelWidget({ prefillUserId = null }) {
               <X className="w-5 h-5 text-white" strokeWidth={3} />
             </button>
 
-            <h1 className="text-3xl font-black tracking-tight leading-[0.9]" style={{
-              background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            {/* No brand line here: the cabinet marquee behind this card already
+                reads BWANABET a few pixels above, and repeating it pushed the
+                actual message down the card. Solid gold rather than the
+                previous gradient fill — gradient text renders unevenly on
+                low-DPI shop monitors and fails outright in a few older mobile
+                browsers, leaving an invisible headline. */}
+            {/* Sized to FIT, not to a nice round number. CONGRATULATIONS! is
+                sixteen characters and cannot wrap, so at 34px it ran past both
+                edges of a 320px card. The card's content box is ~256px on
+                desktop and ~224px on a 320px phone; this clamp keeps the word
+                inside both. Check it renders within the panel if you change the
+                wording — a longer word will need a smaller ceiling. */}
+            {/* mt-5 clears the close button: it sits at top-3 and is 36px tall,
+                so it occupies the first ~48px of the card. The old layout had a
+                brand line absorbing that space. */}
+            {/* Measured to the card's edges rather than sized by guesswork. A
+                clamp has to be tuned to the longest word and then leaves every
+                shorter line undersized; FitText pushes each line to 98% of the
+                available width whatever it says. */}
+            <h1 className="font-black leading-[0.92] mt-5" style={{
+              letterSpacing: '-0.02em',
+              color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}>BWANABET</h1>
-            <h1 className="text-3xl font-black tracking-tight leading-[0.9] mt-1 mb-1">
-              <span style={{
-                background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-              }}>SPIN</span>{' '}
-              <span className="text-white text-2xl" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))' }}>AND</span>{' '}
-              <span style={{
-                background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-              }}>WIN</span>
-            </h1>
-            <p className="text-white text-sm mt-2 mb-5">Tap below and spin to win!</p>
+            }}><FitText max={44} fill={0.98}>CONGRATULATIONS!</FitText></h1>
+            <h2 className="font-black leading-[1.0] mt-1.5 mb-5" style={{
+              letterSpacing: '-0.02em',
+              color: BWANA_YELLOW,
+              filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
+            }}><FitText max={40} fill={0.98}>YOU GET FREE BONUS!</FitText></h2>
 
             <button
               type="button"
               onClick={startPlaying}
-              className="w-full mt-2 py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95"
+              className="bw-play-pulse w-full mt-2 py-2.5 px-3 rounded-xl font-black transition-all hover:scale-[1.03] active:scale-95"
               style={{
                 background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                boxShadow: '0 4px 15px rgba(245,158,11,0.3)',
+                animation: 'playBtnPulse 2.4s ease-in-out infinite',
               }}
             >
-              Play!
+              <FitText max={58} fill={0.95}>PLAY!</FitText>
             </button>
           </div>
         </div>
@@ -782,7 +946,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       {/* ============================================================ */}
       {spinResult && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
-          <div className="text-center p-8 rounded-3xl max-w-xs w-full mx-4" style={{
+          <div className="text-center px-3 py-6 rounded-3xl max-w-xs w-full mx-4" style={{
             background: 'linear-gradient(180deg, rgba(30,40,60,0.95), rgba(15,20,35,0.98))',
             border: `2px solid ${spinResult.isLoss ? 'rgba(156,163,175,0.3)' : 'rgba(251,191,36,0.3)'}`,
             boxShadow: spinResult.isLoss
@@ -792,11 +956,30 @@ export default function WheelWidget({ prefillUserId = null }) {
           }}>
             {spinResult.isLoss ? (
               <>
-                <div className="text-lg font-extrabold uppercase tracking-widest mb-2" style={{ color: 'rgba(255,255,255,0.7)', letterSpacing: '2px' }}>
-                  BETTER LUCK NEXT TIME
+                <div className="font-black uppercase mb-4" style={{ color: '#fff', fontSize: '24px', letterSpacing: '-0.01em', lineHeight: 1 }}>
+                  NOT THIS TIME
                 </div>
-                <div className="text-base font-bold uppercase tracking-widest mb-6" style={{ color: 'rgba(255,255,255,0.4)', letterSpacing: '2px' }}>
-                  TRY AGAIN TOMORROW
+                {/* Countdown strip. The bulb runs on its top and bottom edge use
+                    the same rhythm as the cabinet's marquee border, so the one
+                    new element on this card is built from vocabulary the widget
+                    already owns rather than imported from somewhere else. */}
+                <div className="relative mb-5" style={{
+                  background: '#12151f', border: '1px solid #333a4d', borderRadius: '8px', padding: '12px 9px 10px',
+                }}>
+                  <div style={{ position: 'absolute', left: 7, right: 7, top: 4, height: 3,
+                    background: 'repeating-linear-gradient(90deg,#ffd24a 0 3px,transparent 3px 11px)',
+                    filter: 'drop-shadow(0 0 3px rgba(255,210,74,0.6))' }} />
+                  <div style={{ position: 'absolute', left: 7, right: 7, bottom: 4, height: 3,
+                    background: 'repeating-linear-gradient(90deg,#ffd24a 0 3px,transparent 3px 11px)',
+                    filter: 'drop-shadow(0 0 3px rgba(255,210,74,0.6))' }} />
+                  <div className="uppercase" style={{ fontSize: '8px', fontWeight: 700, letterSpacing: '0.19em', color: '#8e93a3' }}>
+                    NEXT FREE SPIN
+                  </div>
+                  <div style={{ fontWeight: 900, fontSize: '25px', color: '#ffd700', letterSpacing: '0.03em',
+                    lineHeight: 1.05, fontVariantNumeric: 'tabular-nums', textShadow: '0 0 14px rgba(255,215,0,0.35)' }}>
+                    {resetIn.hours}<small style={{ fontSize: '11px', color: '#8e93a3', fontWeight: 700 }}>h</small>{' '}
+                    {String(resetIn.minutes).padStart(2, '0')}<small style={{ fontSize: '11px', color: '#8e93a3', fontWeight: 700 }}>m</small>
+                  </div>
                 </div>
               </>
             ) : (
@@ -826,14 +1009,22 @@ export default function WheelWidget({ prefillUserId = null }) {
             <button
               type="button"
               onClick={claimPrize}
-              className={`w-full py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 ${
+              className={`w-full py-2.5 px-3 rounded-xl font-black shadow-lg transition-all hover:scale-[1.03] active:scale-95 ${
                 spinResult.isLoss
-                  ? 'bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-500/20'
+                  ? 'hover:brightness-110'
                   : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-green-500/30'
               }`}
-              style={spinResult.isLoss ? {} : { '--btn-shadow': '#065F46', '--btn-glow': 'rgba(16,185,129,0.3)', '--btn-glow2': 'rgba(16,185,129,0.15)', animation: 'collectBtnPulse 2s ease-in-out infinite' }}
+              style={spinResult.isLoss ? {
+                // Domed like the wheel's hub button so it reads as part of the
+                // same machine. Red matches the hub and the close control, and
+                // keeps gold reserved for prizes.
+                background: 'linear-gradient(180deg,#ef4444,#b91c1c)',
+                border: '1px solid #f87171',
+                color: '#fff',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.22), 0 3px 9px rgba(0,0,0,0.45)',
+              } : { '--btn-shadow': '#065F46', '--btn-glow': 'rgba(16,185,129,0.3)', '--btn-glow2': 'rgba(16,185,129,0.15)', animation: 'collectBtnPulse 2s ease-in-out infinite' }}
             >
-              {spinResult.isLoss ? 'GOT IT' : 'Claim Prize!'}
+              <FitText max={48} fill={0.95}>{spinResult.isLoss ? 'SEE YOU TOMORROW' : 'CLAIM PRIZE!'}</FitText>
             </button>
           </div>
         </div>
@@ -844,7 +1035,7 @@ export default function WheelWidget({ prefillUserId = null }) {
       {/* ============================================================ */}
       {screen === 'done' && !spinResult && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
-          <div className="text-center p-8 rounded-3xl max-w-xs w-full mx-4" style={{
+          <div className="text-center px-3 py-6 rounded-3xl max-w-xs w-full mx-4" style={{
             background: 'linear-gradient(180deg, rgba(30,40,60,0.95), rgba(15,20,35,0.98))',
             border: '2px solid rgba(156,163,175,0.3)',
             boxShadow: '0 0 60px rgba(100,100,100,0.1), 0 20px 60px rgba(0,0,0,0.5)',
@@ -859,9 +1050,9 @@ export default function WheelWidget({ prefillUserId = null }) {
             <button
               type="button"
               onClick={handleClose}
-              className="w-full py-3.5 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-[1.03] active:scale-95 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-500/20"
+              className="w-full py-2.5 px-3 rounded-xl font-black shadow-lg transition-all hover:scale-[1.03] active:scale-95 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 shadow-gray-500/20"
             >
-              GOT IT
+              <FitText max={58} fill={0.95}>GOT IT</FitText>
             </button>
           </div>
         </div>
@@ -938,24 +1129,22 @@ export default function WheelWidget({ prefillUserId = null }) {
 
           {/* Header */}
           <div className="text-center mb-2">
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-[0.9]" style={{
-              background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            {/* BWANA_YELLOW, sampled from the logo PNG on the live site — the
+                dominant colour across 72,294 of its pixels. Note the site's
+                REGISTER button uses #FFF100, a shade off; this follows the
+                logo, which is what the wordmark should match. */}
+            <h1 className="font-black leading-[0.92]" style={{
+              letterSpacing: '-0.02em',
+              color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}>BWANABET</h1>
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-[0.9] mt-1">
-              <span style={{
-                background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-              }}>SPIN</span>{' '}
-              <span className="text-white text-2xl sm:text-3xl" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))' }}>AND</span>{' '}
-              <span style={{
-                background: 'linear-gradient(180deg, #ffeaa0 0%, #ffd700 30%, #ff9500 70%, #cc7000 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-              }}>WIN</span>
-            </h1>
+            }}><FitText max={46} fill={0.98}>BWANABET</FitText></h1>
+            {/* Same brand yellow as BWANABET above it — the marquee reads as one
+                unit rather than two different yellows stacked. */}
+            <h1 className="font-black leading-[0.92] mt-0.5" style={{
+              letterSpacing: '-0.02em',
+              color: BWANA_YELLOW,
+              filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
+            }}><FitText max={44} fill={0.98}>SPIN AND WIN</FitText></h1>
           </div>
 
           {/* ============ WHEEL AREA ============ */}
@@ -1188,12 +1377,12 @@ export default function WheelWidget({ prefillUserId = null }) {
                     return (
                       <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
                         <text x={150 + 100} y={150 - 7} textAnchor="middle" dominantBaseline="central"
-                          fill="white" fontSize="11" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                          fill="white" fontSize="11" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
                           stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
                           TRY AGAIN
                         </text>
                         <text x={150 + 100} y={150 + 7} textAnchor="middle" dominantBaseline="central"
-                          fill="white" fontSize="11" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                          fill="white" fontSize="11" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
                           stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
                           TOMORROW
                         </text>
@@ -1201,7 +1390,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                     );
                   }
                   return (
-                    <text key={`t${i}`} fill="white" fontSize="26" fontWeight="900" fontFamily="Arial Black, Arial, sans-serif"
+                    <text key={`t${i}`} fill="white" fontSize="26" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
                       stroke="rgba(0,0,0,0.6)" strokeWidth="3" paintOrder="stroke" letterSpacing="2">
                       <textPath href={`#segArc${i}`} startOffset="50%" textAnchor="middle">
                         {seg.label}
@@ -1257,13 +1446,33 @@ export default function WheelWidget({ prefillUserId = null }) {
                   screen === 'spinning' ? 'hover:scale-110 active:scale-90 cursor-pointer' : 'cursor-default'
                 }`}
               >
-                <span className={`font-black text-xl sm:text-2xl tracking-wider ${screen !== 'spinning' ? 'opacity-40' : ''}`} style={{
-                  background: 'linear-gradient(180deg, #ff9999 0%, #ef4444 40%, #b91c1c 100%)',
-                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.9))',
+                {/* Two stacked lines so the label fills the round hub. On one
+                    line "PRESS STOP" would have to shrink to fit the circle's
+                    width and would read smaller than the old "STOP" did.
+                    Solid fill rather than the previous gradient: gradient text
+                    renders unevenly at this size on low-DPI shop monitors and
+                    disappears entirely in a few older mobile browsers. */}
+                <span className={`font-black leading-[0.88] text-center tracking-tight ${screen !== 'spinning' ? 'opacity-40' : ''}`} style={{
+                  // Bounded by the hub's circle, not by its bounding box: text
+                  // near the top and bottom of a round button runs out of width
+                  // long before the square would. Two lines at this size clear
+                  // the curve; going much larger clips on the diagonal.
+                  fontSize: 'clamp(17px, 5.6vw, 26px)',
+                  color: '#ff5f5f',
+                  textShadow: '0 2px 4px rgba(0,0,0,0.95), 0 0 12px rgba(239,68,68,0.45)',
                   ...(screen === 'spinning' ? { animation: 'stopFlash 0.4s ease-in-out infinite' } : {}),
-                }}>STOP</span>
+                }}>PRESS<br />STOP</span>
               </button>
+            </div>
+          </div>
+
+          {/* House promo. Read while the wheel is still turning — the one moment
+              the customer is looking at the screen with nothing else to do.
+              Gold on the two words carrying the promise only; a fully gold line
+              would compete with the prize segments and spend the colour. */}
+          <div className="text-center" style={{ borderTop: '1px solid #3a3f52', marginTop: '14px', paddingTop: '13px' }}>
+            <div className="font-black uppercase" style={{ fontSize: '15px', color: '#fff', lineHeight: 1.2, letterSpacing: '0.01em' }}>
+              WIN CASH <span style={{ color: '#ffd700' }}>EVERYDAY</span><br />WHEN YOU DEPOSIT!
             </div>
           </div>
 

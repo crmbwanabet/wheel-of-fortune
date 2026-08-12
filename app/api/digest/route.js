@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { getWheelDayDate, WINNABLE_POSITIONS } from '@/lib/algorithms';
+import { cooldownDigestLines } from '@/lib/cooldownDigest';
+import { shiftWheelDay } from '@/lib/cooldown';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,14 +25,25 @@ async function handleDigest(request) {
 
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_ALERT_CHAT_ID;
-  const day = getWheelDayDate();
+  // Report the last COMPLETE wheel-day, never the one in progress.
+  //
+  // The cron fires at 04:10 UTC, ten minutes after the 04:00 UTC (06:00 CAT)
+  // reset, so getWheelDayDate() returns the day that has barely started. That
+  // is not a rounding error: spins spike to ~50/min in the minutes after the
+  // reset (vs ~8/min before it), so the digest was reporting several hundred
+  // spins of the NEW day as if they were the daily total, and cooldown counts
+  // — which accumulate across a full day — would always have read ~0.
+  //
+  // Shifting back one day is also correct for a manual mid-day run: a daily
+  // digest summarises a finished day, not a partial one.
+  const day = shiftWheelDay(getWheelDayDate(), -1);
 
   let text;
   try {
     const supabase = getSupabase();
     const { data: state } = await supabase
       .from('wheel_daily_state')
-      .select('total_wins,total_budget_spent')
+      .select('total_wins,total_budget_spent,carryover_in')
       .eq('day_date', day).eq('test_bucket', '').maybeSingle();
     // Spin count = one row per spin. wheel_daily_state.total_spins is NOT
     // maintained (would be a hot-row contention point); the row count / per-day
@@ -39,6 +52,14 @@ async function handleDigest(request) {
       .from('wheel_spin_log')
       .select('id', { count: 'exact', head: true })
       .eq('day_date', day).eq('test_bucket', '');
+    const { count: cooldownBlocked } = await supabase
+      .from('wheel_spin_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('day_date', day).eq('test_bucket', '').eq('cooldown_blocked', true);
+    const { count: carryoverAwarded } = await supabase
+      .from('wheel_spin_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('day_date', day).eq('test_bucket', '').eq('carryover_awarded', true);
 
     const spins = spinCount ?? 0;
     if (spins === 0) {
@@ -69,13 +90,15 @@ async function handleDigest(request) {
           ? `Spins: ${spins} (first ${WINNABLE_POSITIONS} winnable, ${beyond} past cap)`
           : `Spins: ${spins} / ${WINNABLE_POSITIONS} winnable`;
       }
-      text = [
+      const lines = [
         `📊 Wheel daily digest — ${day}`,
         spinsLine,
         `Wins: ${state?.total_wins ?? 0} → K${state?.total_budget_spent ?? 0} / K2,000 budget`,
-        exhaustLine,
-        `(errors delivered live; see alerts)`,
-      ].filter(Boolean).join('\n');
+      ];
+      if (exhaustLine) lines.push(exhaustLine);
+      lines.push(...cooldownDigestLines(cooldownBlocked, carryoverAwarded, state?.carryover_in));
+      lines.push(`(errors delivered live; see alerts)`);
+      text = lines.join('\n');
     }
   } catch (err) {
     text = `📊 Wheel daily digest — ${day}\n⚠️ digest read failed: ${(err && err.message) || 'error'}`;

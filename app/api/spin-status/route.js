@@ -12,14 +12,14 @@ import { waitUntil } from '@vercel/functions';
 async function handleStatus(request) {
   // Kill-switch: return immediately without touching the DB (incident relief).
   if (process.env.SPIN_MAINTENANCE === '1') {
-    return NextResponse.json({ available: false, maintenance: true });
+    return NextResponse.json({ available: false, maintenance: true, reason: 'maintenance' });
   }
 
   let body;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+    return NextResponse.json({ error: 'invalid_body', reason: 'invalid_body' }, { status: 400 });
   }
 
   let customerId;
@@ -27,7 +27,7 @@ async function handleStatus(request) {
     customerId = verifyBwanaToken(body.token).id;
   } catch (err) {
     const code = err instanceof TokenError && err.code === 'expired' ? 'token_expired' : 'invalid_token';
-    return NextResponse.json({ available: false, error: code }, { status: 401 });
+    return NextResponse.json({ available: false, error: code, reason: code }, { status: 401 });
   }
 
   const dayDate = getWheelDayDate();
@@ -49,10 +49,13 @@ async function handleStatus(request) {
   if (error) {
     console.error('[spin-status] query failed:', error);
     waitUntil(reportError(error, { route: 'spin-status', status: 500, code: 'query_failed' }));
-    return NextResponse.json({ available: true }); // fail open — claim_spin still dedupes
+    // Fail open — claim_spin still dedupes. `check_failed` is deliberately NOT
+    // a sticky reason: a DB hiccup must not suppress the wheel for the day.
+    return NextResponse.json({ available: true, reason: 'check_failed' });
   }
 
-  return NextResponse.json({ available: data.length === 0 });
+  const available = data.length === 0;
+  return NextResponse.json({ available, reason: available ? 'available' : 'already_spun' });
 }
 
 export async function POST(request) {
@@ -61,6 +64,6 @@ export async function POST(request) {
   } catch (err) {
     waitUntil(reportError(err, { route: 'spin-status', status: 500, code: 'unhandled' }));
     // spin-status fails open — the atomic claim in /api/spin is the source of truth.
-    return NextResponse.json({ available: true });
+    return NextResponse.json({ available: true, reason: 'check_failed' });
   }
 }
