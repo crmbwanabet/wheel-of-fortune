@@ -13,6 +13,7 @@ import { verifyBwanaToken, TokenError } from '@/lib/bwanaAuth.mjs';
 import { reportError } from '@/lib/telemetry';
 import { checkDepositEligibility } from '@/lib/depositCheck';
 import { resolveCooldownDays } from '@/lib/cooldown';
+import { resolveWinsDisabled, shouldRunDepositGate } from '@/lib/killSwitch';
 
 // Colocate with the Supabase database (eu-west-1 / Dublin) to remove
 // cross-region round trips from every query on the hot path.
@@ -104,13 +105,37 @@ async function handleSpin(request) {
 
   const supabase = getSupabase();
 
+  // --- Payout killswitch ---
+  // Operator flag in the DB, so stopping payouts takes effect on the NEXT spin
+  // rather than after a redeploy. Reads fail open (see lib/killSwitch.js): a
+  // killswitch that engages itself on a DB blip would stop every payout with
+  // nobody having asked, and it would look exactly like an unlucky day.
+  //
+  // One single-row PK lookup per spin. Deliberately NOT cached: a stale cache
+  // is the one thing that would undermine the "immediate" in an emergency stop.
+  let winsDisabled = false;
+  {
+    const { data: ctl, error: ctlErr } = await supabase
+      .from('wheel_controls')
+      .select('wins_disabled')
+      .eq('id', 1)
+      .maybeSingle();
+    winsDisabled = resolveWinsDisabled(ctl, ctlErr);
+    if (ctlErr) {
+      waitUntil(reportError(ctlErr, { route: 'spin', status: 200, code: 'killswitch_read_failed' }));
+    }
+  }
+
   // --- Deposit-eligibility gate ---
   // Real traffic only; test/load traffic bypasses the external call entirely.
+  // Skipped outright while the killswitch is engaged — every spin is a loss
+  // regardless, so the paid BwanaBet round-trip buys nothing, and skipping it
+  // keeps killswitch losses out of the gate's "win blocked" telemetry.
   // Effective eligibility feeds claim_spin; the full result is logged async.
   let effectiveEligible = true;      // default: do not block (off / shadow / test)
   let depositCompletion = null;      // Promise<eventual> to log via waitUntil
   let depositSync = null;            // sync verdict for logging
-  const gateActive = !isTest && (DEPOSIT_GATE_MODE === 'shadow' || DEPOSIT_GATE_MODE === 'enforce');
+  const gateActive = shouldRunDepositGate({ isTest, winsDisabled, mode: DEPOSIT_GATE_MODE });
 
   if (gateActive) {
     try {
@@ -144,7 +169,13 @@ async function handleSpin(request) {
     p_winning_positions: winningPositions,
     p_skip_dedupe: skipDedupe,
     p_force_prize: forceWin,
-    p_eligible: effectiveEligible,
+    // The killswitch rides the eligibility flag on purpose. p_eligible=false
+    // already suppresses every payout route in claim_spin — queue pop, positions
+    // map, and carryover all check it — so the emergency path is code that has
+    // been live for weeks rather than a new branch written under pressure. It
+    // also leaves the prize pot untouched: nothing is popped, so payouts resume
+    // exactly where they left off.
+    p_eligible: winsDisabled ? false : effectiveEligible,
     p_cooldown_days: SPIN_COOLDOWN_DAYS,
     p_payout_mode: WHEEL_PAYOUT_MODE,
     p_prize_queue: prizeQueue,
