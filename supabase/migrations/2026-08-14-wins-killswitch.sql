@@ -52,6 +52,27 @@ INSERT INTO wheel_controls (id, wins_disabled, reason)
 VALUES (1, false, 'initial — payouts enabled')
 ON CONFLICT (id) DO NOTHING;
 
+-- Stamp updated_at on every flip.
+--
+-- A column DEFAULT only fires on INSERT, so without this the timestamp is
+-- frozen at whenever the row was seeded. Caught in testing: three flips in a
+-- row all still read 13:23:34. The one question an operator asks of this table
+-- mid-incident is "when was this turned on, and by which change?" — a stale
+-- answer there is worse than no answer, because it looks authoritative.
+-- A trigger rather than a convention: it cannot be forgotten at 3am.
+CREATE OR REPLACE FUNCTION wheel_controls_touch() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS wheel_controls_touch_trg ON wheel_controls;
+CREATE TRIGGER wheel_controls_touch_trg
+  BEFORE UPDATE ON wheel_controls
+  FOR EACH ROW EXECUTE FUNCTION wheel_controls_touch();
+
 -- Same lockdown as every other wheel table: RLS on, no policies, service_role
 -- only. The anon key is shared with the CRM project (see the 2026-07 audit), so
 -- a readable killswitch would be a writable one.
