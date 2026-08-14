@@ -37,12 +37,17 @@ async function handleStatus(request) {
   // accounts can share one computer. Anti-farming is handled by the deposit
   // gate. `fingerprint` is still accepted (and logged at spin time) but no
   // longer gates availability.
+  // The outcome columns are selected so a widget whose /api/spin response was
+  // lost in flight can recover what actually happened instead of inventing it.
+  // Ordered newest-first: dedup means there should only ever be one row, and if
+  // that ever stops being true the latest is the one the customer just played.
   const query = supabase
     .from('wheel_spin_log')
-    .select('customer_id')
+    .select('customer_id, won, prize_amount, segment_index')
     .eq('day_date', dayDate)
     .eq('test_bucket', '')
     .eq('customer_id', customerId)
+    .order('created_at', { ascending: false })
     .limit(1);
 
   const { data, error } = await query;
@@ -55,7 +60,22 @@ async function handleStatus(request) {
   }
 
   const available = data.length === 0;
-  return NextResponse.json({ available, reason: available ? 'available' : 'already_spun' });
+  if (available) return NextResponse.json({ available: true, reason: 'available' });
+
+  // Attach the committed outcome. This is the customer's own spin, read behind
+  // their verified token, so there is nothing here they are not entitled to —
+  // and without it a widget that lost the /api/spin response has no way to tell
+  // a win from a loss, which is exactly how a real win gets shown as a loss.
+  const row = data[0];
+  return NextResponse.json({
+    available: false,
+    reason: 'already_spun',
+    result: {
+      segmentIndex: row.segment_index,
+      won: row.won === true,
+      prizeAmount: Number(row.prize_amount) || 0,
+    },
+  });
 }
 
 export async function POST(request) {

@@ -5,6 +5,8 @@ import { X, Sparkles } from 'lucide-react';
 import { generateFingerprint } from '@/lib/fingerprint';
 import { hasSpun, withSpun } from '@/lib/spunCache.mjs';
 import { decideAvailability } from '@/lib/availability.mjs';
+import { classifySpinRecovery } from '@/lib/spinRecovery';
+import { computeLanding } from '@/lib/wheelLanding';
 import { msUntilNextWheelReset, splitCountdown } from '@/lib/countdown';
 
 // ============================================================================
@@ -144,6 +146,22 @@ async function postSpinWithRetry(body) {
       }
       throw err;
     }
+  }
+}
+
+// Ask the server what actually happened to a spin whose response never arrived.
+// Resolves to the parsed body, or null if even this call fails — the caller
+// (lib/spinRecovery.js) treats null as "we learned nothing", never as a result.
+async function fetchSpinStatus(token, fingerprint) {
+  try {
+    const res = await fetch('/api/spin-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, fingerprint }),
+    });
+    return await res.json().catch(() => null);
+  } catch {
+    return null;
   }
 }
 
@@ -307,6 +325,9 @@ export default function WheelWidget({ prefillUserId = null }) {
   const [countUpValue, setCountUpValue] = useState(0);
   const [shaking, setShaking] = useState(false);
   const [showSlowingText, setShowSlowingText] = useState(false);
+  // Which flavour of "we could not confirm your spin" to show: 'not_spun'
+  // (theirs to retry), 'spent_unknown' or 'unknown' (spin gone, outcome unread).
+  const [recoveryOutcome, setRecoveryOutcome] = useState(null);
   const [prizeFlash, setPrizeFlash] = useState(false);
 
   // Countdown to the next free spin, shown on the loss card. Hours and minutes
@@ -645,11 +666,11 @@ export default function WheelWidget({ prefillUserId = null }) {
             let remaining = targetRemainder - (currentAngle % 360);
             if (remaining <= 0) remaining += 360;
 
-            const currentSpeed = brakingSpeedRef.current;
-            const extraRotations = currentSpeed > 12 ? 4 : currentSpeed > 6 ? 3 : 2;
-            const decelTotal = extraRotations * 360 + remaining;
-            // Speed-matched duration with 5s minimum so wheel always decelerates visibly
-            const duration = Math.max(5000, decelTotal * 50 / currentSpeed);
+            // Speed-matched, but floored and capped — the wheel brakes for as
+            // long as the API takes, and a slow answer used to leave it turning
+            // too slowly to land this side of nineteen minutes. See
+            // lib/wheelLanding.js.
+            const { decelTotal, duration } = computeLanding(brakingSpeedRef.current, remaining);
 
             decelFromRef.current = currentAngle;
             decelTotalRef.current = decelTotal;
@@ -713,6 +734,45 @@ export default function WheelWidget({ prefillUserId = null }) {
     setScreen('spinning');
   }, []);
 
+  // Land the wheel on the spin the SERVER actually recorded.
+  //
+  // Used wherever /api/spin leaves us without a result we can trust: the
+  // response was lost in flight, or it came back `already_spun` (which says a
+  // spin exists but not what it hit). Both used to pick a random LOSS segment,
+  // so a committed win was displayed as a loss and the customer never found
+  // out. Now we ask, and only show what comes back.
+  //
+  // Drives the wheel through the same refs the happy path uses.
+  //
+  // `knownSpent` is set by the already_spun caller, which has the server's word
+  // that a spin exists. Without it a failed recovery there would fall through to
+  // the generic "try again" copy and invite a retry we already know is pointless.
+  const landOnRecordedSpin = useCallback((spunCustomerId, knownSpent = false) => {
+    return fetchSpinStatus(authTokenRef.current, fingerprintRef.current).then((status) => {
+      const rec = classifySpinRecovery(status, NUM);
+      if (rec.kind === 'recovered') {
+        markSpun(spunCustomerId);
+        winSegmentRef.current = WHEEL_SEGMENTS[rec.segmentIndex];
+        pendingResultRef.current = {
+          winIndex: rec.segmentIndex,
+          data: { segmentIndex: rec.segmentIndex, won: rec.won, prize: rec.prizeAmount },
+        };
+        return;
+      }
+      // Nothing we can honestly land on. Stop the wheel and say so — leaving the
+      // screen on 'stopping' would brake forever with no result ever arriving.
+      //
+      // Only `spent_unknown` is proof the spin is gone, so only it marks the
+      // local cache. On `unknown` we genuinely do not know, and denying a spin
+      // we cannot prove was used is the wrong way to be wrong — /api/spin
+      // dedupes atomically, so a retry can never pay out twice.
+      const outcome = knownSpent ? 'spent_unknown' : rec.kind;
+      if (outcome === 'spent_unknown') markSpun(spunCustomerId);
+      setRecoveryOutcome(outcome);
+      setScreen('spinUnconfirmed');
+    });
+  }, []);
+
   // STOP — brake immediately, API call in background
   const stopWheel = useCallback(() => {
     if (screenRef.current !== 'spinning') return;
@@ -734,11 +794,11 @@ export default function WheelWidget({ prefillUserId = null }) {
       .then(data => {
         if (data.error === 'already_spun') {
           markSpun(spunCustomerId);
-          // Land on a random loss segment — let wheel decelerate naturally
-          const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
-          const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
-          pendingResultRef.current = { winIndex: randomLoss, data: { segmentIndex: randomLoss, won: false, prize: 0 } };
-          winSegmentRef.current = WHEEL_SEGMENTS[randomLoss];
+          // A spin IS on record — go and show the one they actually got rather
+          // than a random loss. This is the ordinary path for a customer who
+          // retries after a dropped response, so inventing a loss here would
+          // hide the very win the retry was meant to surface.
+          landOnRecordedSpin(spunCustomerId, true);
           return;
         }
         if (data.error) {
@@ -756,13 +816,13 @@ export default function WheelWidget({ prefillUserId = null }) {
       })
       .catch(() => {
         reportClientError('spin_network_error', 'spin request failed', null, spunCustomerId);
-        // Land on a random loss segment on network error
-        const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
-        const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
-        pendingResultRef.current = { winIndex: randomLoss, data: { segmentIndex: randomLoss, won: false, prize: 0 } };
-        winSegmentRef.current = WHEEL_SEGMENTS[randomLoss];
+        // The RESPONSE was lost, not necessarily the spin — /api/spin may have
+        // committed it before the connection died. Ask what happened instead of
+        // inventing an answer. See lib/spinRecovery.js for what each verdict
+        // permits us to claim.
+        landOnRecordedSpin(spunCustomerId);
       });
-  }, [isTestMode, forceWinParam, testCustomerId]);
+  }, [isTestMode, forceWinParam, testCustomerId, landOnRecordedSpin]);
 
   // CLAIM — acknowledge the result and close the widget (the near-identical
   // 'done' card only shows if the user re-opens it). Test mode loops to prompt.
@@ -782,17 +842,39 @@ export default function WheelWidget({ prefillUserId = null }) {
     window.parent.postMessage({ type: 'bwanabet-wheel-close' }, '*');
   }, []);
 
+  // Play again after a spin we could not confirm. Offered only when the server
+  // has no spin on record, or when we could not find out at all — never when it
+  // confirmed one. This cannot double-play: claim_spin dedupes atomically, so a
+  // wrong guess here costs an `already_spun`, not a second payout.
+  const retryUnconfirmedSpin = useCallback(() => {
+    // The wheel was mid-brake when it gave up. These refs survive a screen
+    // change, so without clearing them the retry inherits the old brake and a
+    // stale landing target, and stops dead almost immediately.
+    brakingRef.current = false;
+    brakingSpeedRef.current = 0;
+    pendingResultRef.current = null;
+    winSegmentRef.current = null;
+    setRecoveryOutcome(null);
+    setScreen('prompt');
+  }, []);
+
   // Notify parent when user has spun (result or done screen). Carries the
   // account this result belongs to: embed.js caches "spun today" against
   // whoever is active when the message lands, and on a shared computer the
   // logged-in account can change in between — caching it against the wrong
   // customer costs them their spin. Null in test mode, where there is no token.
+  //
+  // An unconfirmed spin only counts when the server CONFIRMED one is on record
+  // ('spent_unknown'). Telling the parent to hide the trigger on 'not_spun' or
+  // 'unknown' would burn a spin the customer may never have taken.
   useEffect(() => {
-    if (screen === 'result' || screen === 'done') {
+    const spent = screen === 'result' || screen === 'done'
+      || (screen === 'spinUnconfirmed' && recoveryOutcome === 'spent_unknown');
+    if (spent) {
       const customerId = customerIdFromToken(authTokenRef.current);
       window.parent.postMessage({ type: 'bwanabet-wheel-spun', customerId }, '*');
     }
-  }, [screen]);
+  }, [screen, recoveryOutcome]);
 
   if (closed) return null;
 
@@ -875,6 +957,62 @@ export default function WheelWidget({ prefillUserId = null }) {
               PLEASE LOG IN
             </div>
             <p className="text-gray-400 text-sm mb-2">Log in to your BwanaBet account to spin the wheel.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* SPIN COULD NOT BE CONFIRMED                                  */}
+      {/* Shown instead of a fabricated loss when /api/spin gave us no */}
+      {/* trustworthy result. The copy differs by how much we actually */}
+      {/* know, because "your spin is safe" and "your spin is gone"    */}
+      {/* are opposite instructions to the customer.                   */}
+      {/* ============================================================ */}
+      {screen === 'spinUnconfirmed' && (
+        <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
+          <div className="relative text-center px-3 py-6 rounded-2xl max-w-xs w-full mx-4" style={{
+            background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
+            border: '3px solid #3a3f52',
+            boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
+          }}>
+            <button type="button" onClick={handleClose}
+              className="absolute top-3 right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-90"
+              style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 2px 8px rgba(239,68,68,0.5)' }}>
+              <X className="w-5 h-5 text-white" strokeWidth={3} />
+            </button>
+
+            {recoveryOutcome === 'spent_unknown' ? (
+              <>
+                <div className="text-lg font-extrabold uppercase tracking-widest mb-2 mt-4" style={{ color: 'rgba(255,255,255,0.85)', letterSpacing: '2px' }}>
+                  SPIN RECORDED
+                </div>
+                <p className="text-gray-400 text-sm mb-4">
+                  Your spin went through, but we could not load the result. If you won,
+                  the prize is already on your BwanaBet account — nothing else to do.
+                </p>
+                <button type="button" onClick={handleClose}
+                  className="w-full py-3 rounded-xl font-extrabold uppercase tracking-wider text-white transition-all hover:scale-105 active:scale-95"
+                  style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 4px 14px rgba(239,68,68,0.45)', letterSpacing: '1px' }}>
+                  CLOSE
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="text-lg font-extrabold uppercase tracking-widest mb-2 mt-4" style={{ color: 'rgba(255,255,255,0.85)', letterSpacing: '2px' }}>
+                  CONNECTION PROBLEM
+                </div>
+                <p className="text-gray-400 text-sm mb-4">
+                  {recoveryOutcome === 'not_spun'
+                    ? 'We could not reach the wheel. Your spin has NOT been used — give it another go.'
+                    : 'We could not confirm your spin. Try again — if it already went through, we will show you the result.'}
+                </p>
+                <button type="button" onClick={retryUnconfirmedSpin}
+                  className="w-full py-3 rounded-xl font-extrabold uppercase tracking-wider transition-all hover:scale-105 active:scale-95"
+                  style={{ background: `linear-gradient(135deg, ${BWANA_YELLOW}, #f0b400)`, color: '#1a1e2e', boxShadow: '0 4px 14px rgba(254,242,0,0.4)', letterSpacing: '1px' }}>
+                  TRY AGAIN
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
