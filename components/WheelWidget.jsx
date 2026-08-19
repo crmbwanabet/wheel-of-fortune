@@ -27,9 +27,9 @@ const WHEEL_SEGMENTS = [
   { id: 8,  label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
   { id: 9,  label: 'K100',               prize: { kwacha: 100 },   color: '#ffd600', isLoss: false },
   { id: 10, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
-  { id: 11, label: 'K200',               prize: { kwacha: 200 },   color: '#ff1744', isLoss: false },
+  { id: 11, label: 'K200',               prize: { kwacha: 200 },   color: '#ffab00', isLoss: false },
   { id: 12, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
-  { id: 13, label: 'K10,000',            prize: { kwacha: 10000 }, color: '#ffea00', isLoss: false },
+  { id: 13, label: 'K10,000',            prize: { kwacha: 10000 }, color: '#c50e1f', isLoss: false, isJackpot: true },
   { id: 14, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
 ];
 
@@ -675,7 +675,13 @@ export default function WheelWidget({ prefillUserId = null }) {
             const landing = resolveLandingSegment(winIndex);
             const base = WHEEL_SEGMENTS[landing.index];
             // API responses say `win`; the recovery path says `won` — accept both.
-            const isWin = Boolean(data && (data.win ?? data.won));
+            // A substituted landing means the index was unrenderable (jackpot,
+            // out-of-range, stale bundle) — the whole payload is untrusted then,
+            // so the claimed win is discarded too, never shown on a loss slice.
+            if (landing.substituted) {
+              reportClientError('impossible_segment', `index ${winIndex}`, null, null);
+            }
+            const isWin = !landing.substituted && Boolean(data && (data.win ?? data.won));
             winSegmentRef.current = isWin
               ? { ...base, isLoss: false, prize: { kwacha: data.prize?.kwacha ?? base.prize?.kwacha ?? 0 } }
               : { ...base, isLoss: true, prize: null };
@@ -774,12 +780,16 @@ export default function WheelWidget({ prefillUserId = null }) {
         markSpun(spunCustomerId);
         const recLanding = resolveLandingSegment(rec.segmentIndex);
         const recBase = WHEEL_SEGMENTS[recLanding.index];
-        winSegmentRef.current = rec.won
+        if (recLanding.substituted) {
+          reportClientError('impossible_segment', `recovery index ${rec.segmentIndex}`, null, spunCustomerId);
+        }
+        const recWon = !recLanding.substituted && rec.won;
+        winSegmentRef.current = recWon
           ? { ...recBase, isLoss: false, prize: { kwacha: rec.prizeAmount ?? recBase.prize?.kwacha ?? 0 } }
           : { ...recBase, isLoss: true, prize: null };
         pendingResultRef.current = {
           winIndex: recLanding.index,
-          data: { segmentIndex: recLanding.index, won: rec.won, prize: rec.won ? { kwacha: rec.prizeAmount } : null },
+          data: { segmentIndex: recLanding.index, won: recWon, prize: recWon ? { kwacha: rec.prizeAmount } : null },
         };
         return;
       }
@@ -1488,6 +1498,19 @@ export default function WheelWidget({ prefillUserId = null }) {
                     <stop offset="97%" stopColor="#fff" stopOpacity="0.04" />
                     <stop offset="100%" stopColor="#fff" stopOpacity="0.06" />
                   </radialGradient>
+                  {/* Jackpot — deep-to-bright red, lit from the rim like a marquee */}
+                  <radialGradient id="jackpotGrad" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#7a0212" />
+                    <stop offset="55%" stopColor="#c50e1f" />
+                    <stop offset="85%" stopColor="#ff1744" />
+                    <stop offset="100%" stopColor="#ff5252" />
+                  </radialGradient>
+                  {/* Jackpot shimmer — bright band that sweeps the slice */}
+                  <linearGradient id="jackpotSheen" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0" />
+                    <stop offset="50%" stopColor="#ffd700" stopOpacity="0.45" />
+                    <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+                  </linearGradient>
                 </defs>
 
                 {/* Segments */}
@@ -1497,6 +1520,22 @@ export default function WheelWidget({ prefillUserId = null }) {
                   const s = { x: 150 + 148 * Math.cos(sA * Math.PI / 180), y: 150 + 148 * Math.sin(sA * Math.PI / 180) };
                   const e = { x: 150 + 148 * Math.cos(eA * Math.PI / 180), y: 150 + 148 * Math.sin(eA * Math.PI / 180) };
                   const path = `M 150 150 L ${s.x} ${s.y} A 148 148 0 0 1 ${e.x} ${e.y} Z`;
+                  if (seg.isJackpot) {
+                    // Marquee treatment: red radial gradient, gold rim, and a
+                    // pulsing gold sheen (SMIL skipped on low-end devices).
+                    return (
+                      <g key={seg.id}>
+                        <path d={path} fill="url(#jackpotGrad)" />
+                        <path d={path} fill="url(#jackpotSheen)" opacity="0.35">
+                          {!isLowEnd && <animate attributeName="opacity" values="0.1;0.55;0.1" dur="1.6s" repeatCount="indefinite" />}
+                        </path>
+                        <path d={path} fill="none" stroke="#ffd700" strokeWidth="2.5">
+                          {!isLowEnd && <animate attributeName="stroke-opacity" values="1;0.45;1" dur="1.6s" repeatCount="indefinite" />}
+                        </path>
+                        <path d={path} fill="url(#segGloss)" />
+                      </g>
+                    );
+                  }
                   return (
                     <g key={seg.id}>
                       <path d={path} fill={seg.color} />
@@ -1552,9 +1591,27 @@ export default function WheelWidget({ prefillUserId = null }) {
                       </g>
                     );
                   }
+                  if (seg.isJackpot) {
+                    // Two-line radial label — the 14-segment arc is too tight
+                    // for curved 7-character text. Gold on red, marquee-style.
+                    return (
+                      <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
+                        <text x={150 + 102} y={150 - 8} textAnchor="middle" dominantBaseline="central"
+                          fill="#ffd700" fontSize="15" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                          stroke="rgba(0,0,0,0.75)" strokeWidth="3" paintOrder="stroke" letterSpacing="0.5">
+                          K10,000
+                        </text>
+                        <text x={150 + 102} y={150 + 8} textAnchor="middle" dominantBaseline="central"
+                          fill="#fff" fontSize="10" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                          stroke="rgba(0,0,0,0.75)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="2">
+                          JACKPOT
+                        </text>
+                      </g>
+                    );
+                  }
                   return (
-                    <text key={`t${i}`} fill="white" fontSize="26" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
-                      stroke="rgba(0,0,0,0.6)" strokeWidth="3" paintOrder="stroke" letterSpacing="2">
+                    <text key={`t${i}`} fill="white" fontSize="17" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                      stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="1">
                       <textPath href={`#segArc${i}`} startOffset="50%" textAnchor="middle">
                         {seg.label}
                       </textPath>
