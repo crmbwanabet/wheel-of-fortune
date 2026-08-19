@@ -1,7 +1,24 @@
 # Prize ladder rework, hourly payout pacing, and display jackpot
 
-Date: 2026-08-19
-Status: approved (design), not yet implemented
+Date: 2026-08-19 (amended same day)
+Status: implemented on branch design/prize-ladder-pacing-jackpot
+
+## 0. Amendments (owner review, 2026-08-19)
+
+1. **Wheel-day reset moves 06:00 -> 09:00 CAT** (07:00 UTC). Owned by
+   `lib/wheelTime.js`; algorithms/widget/embed day math, the countdown, and the
+   digest cron (now `10 7 * * *`) follow. The pacing quota table is rotated so
+   wheel-hour 0 opens at the 09:00 traffic peak (25 prizes).
+2. **"YOU WON K10,000" is undisplayable, not merely unreachable.** The jackpot
+   segment carries `prize: null` and `isLoss: true` (with `isJackpot` driving
+   its marquee artwork), so no input can make the widget construct a K10,000
+   win screen. A substituted (unrenderable) server index additionally discards
+   the payload's win claim and reports `impossible_segment` telemetry.
+3. **`claim_spin` is layout-aware**: `p_layout` defaults to `'legacy'` (the old
+   10-segment indices) and the new bundle passes `'v2'` (14 segments). This
+   decouples the migration from the frontend deploy: the migration can apply
+   while the old production bundle is still live, which is what allows full
+   live testing on a Vercel preview before anything merges to main.
 
 ## 1. Context
 
