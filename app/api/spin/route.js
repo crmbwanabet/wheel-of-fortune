@@ -7,7 +7,9 @@ import {
   pickAlgorithm,
   buildWinningMap,
   generatePrizePool,
+  VALID_PRIZE_AMOUNTS,
 } from '@/lib/algorithms';
+import { releaseCap, UNPACED_CAP } from '@/lib/releaseCap';
 import { sendWinNotification } from '@/lib/telegram';
 import { verifyBwanaToken, TokenError } from '@/lib/bwanaAuth.mjs';
 import { reportError } from '@/lib/telemetry';
@@ -88,7 +90,12 @@ async function handleSpin(request) {
     }
   }
 
-  const forceWin = isTest && typeof body.forceWin === 'number' ? body.forceWin : null;
+  // Forced prizes are test-only AND restricted to the real prize set — an
+  // amount outside it (e.g. the display-only K10,000) has no segment mapping
+  // and would RAISE inside claim_spin, so reject it here instead.
+  const forceWin = isTest && typeof body.forceWin === 'number' && VALID_PRIZE_AMOUNTS.includes(body.forceWin)
+    ? body.forceWin
+    : null;
   const bucket = isTest
     ? (typeof body.testBucket === 'string' && body.testBucket.length > 0 ? body.testBucket : 'stress')
     : '';
@@ -179,6 +186,10 @@ async function handleSpin(request) {
     p_cooldown_days: SPIN_COOLDOWN_DAYS,
     p_payout_mode: WHEEL_PAYOUT_MODE,
     p_prize_queue: prizeQueue,
+    // Hourly pacing: prizes are released on a cumulative schedule so the pot
+    // lasts all day instead of draining in the first hour. Test traffic is
+    // unpaced. Sending UNPACED_CAP restores the old FCFS behaviour.
+    p_release_cap: isTest ? UNPACED_CAP : releaseCap(Date.now()),
   });
   if (claimErr) {
     if (claimErr.code === '57014') {
@@ -213,6 +224,7 @@ async function handleSpin(request) {
         budgetSpent: result.budget_today,
         spinNumber: result.spin_number,
         payoutMode: WHEEL_PAYOUT_MODE,
+        poolSize: prizeQueue.length,
       }).catch(err => console.error('[spin] Telegram notify failed:', err?.message))
     );
   }
