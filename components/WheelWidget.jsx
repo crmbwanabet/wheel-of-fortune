@@ -7,22 +7,30 @@ import { hasSpun, withSpun } from '@/lib/spunCache.mjs';
 import { decideAvailability } from '@/lib/availability.mjs';
 import { classifySpinRecovery } from '@/lib/spinRecovery';
 import { computeLanding } from '@/lib/wheelLanding';
+import { resolveLandingSegment } from '@/lib/landingSegment';
 import { msUntilNextWheelReset, splitCountdown } from '@/lib/countdown';
 
 // ============================================================================
-// DATA — 10 segments: K10, K20, K50, K100, K200, Try Again Tomorrow ×5
+// DATA — 14 segments: six real prizes on even indices 0..10 in ascending
+// order, the DISPLAY-ONLY K10,000 jackpot at index 12, losses on odds.
+// Index 12 is unreachable: the server maps prizes only to 0,2,4,6,8,10 and
+// losses only to odd indices. See lib/jackpotSafety.test.mjs.
 // ============================================================================
 const WHEEL_SEGMENTS = [
-  { id: 1,  label: 'K10',                prize: { kwacha: 10 },  color: '#00e5ff', isLoss: false },
-  { id: 2,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
-  { id: 3,  label: 'K50',                prize: { kwacha: 50 },  color: '#d500f9', isLoss: false },
-  { id: 4,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
-  { id: 5,  label: 'K200',               prize: { kwacha: 200 }, color: '#ffd600', isLoss: false },
-  { id: 6,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
-  { id: 7,  label: 'K20',                prize: { kwacha: 20 },  color: '#00e676', isLoss: false },
-  { id: 8,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
-  { id: 9,  label: 'K100',               prize: { kwacha: 100 }, color: '#ff6d00', isLoss: false },
-  { id: 10, label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
+  { id: 1,  label: 'K5',                 prize: { kwacha: 5 },     color: '#00e5ff', isLoss: false },
+  { id: 2,  label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  { id: 3,  label: 'K10',                prize: { kwacha: 10 },    color: '#00e676', isLoss: false },
+  { id: 4,  label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  { id: 5,  label: 'K20',                prize: { kwacha: 20 },    color: '#d500f9', isLoss: false },
+  { id: 6,  label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  { id: 7,  label: 'K50',                prize: { kwacha: 50 },    color: '#ff6d00', isLoss: false },
+  { id: 8,  label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  { id: 9,  label: 'K100',               prize: { kwacha: 100 },   color: '#ffd600', isLoss: false },
+  { id: 10, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  { id: 11, label: 'K200',               prize: { kwacha: 200 },   color: '#ff1744', isLoss: false },
+  { id: 12, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  { id: 13, label: 'K10,000',            prize: { kwacha: 10000 }, color: '#ffea00', isLoss: false },
+  { id: 14, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
 ];
 
 const NUM = WHEEL_SEGMENTS.length;
@@ -658,9 +666,21 @@ export default function WheelWidget({ prefillUserId = null }) {
             const { winIndex, data } = pendingResultRef.current;
             pendingResultRef.current = null;
 
-            winSegmentRef.current = WHEEL_SEGMENTS[winIndex];
+            // The server is the authority on the prize amount; the segment
+            // table only supplies the slice we stop on. Reading kwacha from
+            // the payload keeps the displayed amount correct even if a stale
+            // bundle has a different layout, and resolveLandingSegment
+            // substitutes a loss slice for anything unrenderable (jackpot
+            // index, out-of-range) so the wheel never crashes mid-spin.
+            const landing = resolveLandingSegment(winIndex);
+            const base = WHEEL_SEGMENTS[landing.index];
+            // API responses say `win`; the recovery path says `won` — accept both.
+            const isWin = Boolean(data && (data.win ?? data.won));
+            winSegmentRef.current = isWin
+              ? { ...base, isLoss: false, prize: { kwacha: data.prize?.kwacha ?? base.prize?.kwacha ?? 0 } }
+              : { ...base, isLoss: true, prize: null };
 
-            const segCenter = winIndex * SEG_ANGLE + SEG_ANGLE / 2;
+            const segCenter = landing.index * SEG_ANGLE + SEG_ANGLE / 2;
             const jitter = (Math.random() - 0.5) * (SEG_ANGLE * 0.5);
             const targetRemainder = (360 - segCenter + jitter + 360) % 360;
             let remaining = targetRemainder - (currentAngle % 360);
@@ -752,10 +772,14 @@ export default function WheelWidget({ prefillUserId = null }) {
       const rec = classifySpinRecovery(status, NUM);
       if (rec.kind === 'recovered') {
         markSpun(spunCustomerId);
-        winSegmentRef.current = WHEEL_SEGMENTS[rec.segmentIndex];
+        const recLanding = resolveLandingSegment(rec.segmentIndex);
+        const recBase = WHEEL_SEGMENTS[recLanding.index];
+        winSegmentRef.current = rec.won
+          ? { ...recBase, isLoss: false, prize: { kwacha: rec.prizeAmount ?? recBase.prize?.kwacha ?? 0 } }
+          : { ...recBase, isLoss: true, prize: null };
         pendingResultRef.current = {
-          winIndex: rec.segmentIndex,
-          data: { segmentIndex: rec.segmentIndex, won: rec.won, prize: rec.prizeAmount },
+          winIndex: recLanding.index,
+          data: { segmentIndex: recLanding.index, won: rec.won, prize: rec.won ? { kwacha: rec.prizeAmount } : null },
         };
         return;
       }
@@ -803,11 +827,12 @@ export default function WheelWidget({ prefillUserId = null }) {
         }
         if (data.error) {
           reportClientError('spin_failed', data.error || 'unknown', null, spunCustomerId);
-          // Land on a random loss segment on error too
-          const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
-          const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
-          pendingResultRef.current = { winIndex: randomLoss, data: { segmentIndex: randomLoss, won: false, prize: 0 } };
-          winSegmentRef.current = WHEEL_SEGMENTS[randomLoss];
+          // Land on a random loss segment on error too. resolveLandingSegment
+          // with an invalid index always substitutes from the shared loss set,
+          // which also keeps the jackpot slice out of the fallback pool.
+          const fallback = resolveLandingSegment(-1);
+          pendingResultRef.current = { winIndex: fallback.index, data: { segmentIndex: fallback.index, won: false, prize: 0 } };
+          winSegmentRef.current = { ...WHEEL_SEGMENTS[fallback.index], isLoss: true, prize: null };
           return;
         }
         markSpun(spunCustomerId);
