@@ -29,7 +29,11 @@ const WHEEL_SEGMENTS = [
   { id: 10, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
   { id: 11, label: 'K200',               prize: { kwacha: 200 },   color: '#ffab00', isLoss: false },
   { id: 12, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
-  { id: 13, label: 'K10,000',            prize: { kwacha: 10000 }, color: '#c50e1f', isLoss: false, isJackpot: true },
+  // The jackpot is DISPLAY-ONLY: prize:null and isLoss:true mean that even if
+  // some future code path ever set this segment as the result, the widget
+  // would render a loss with no amount — the string "K10,000" exists only as
+  // slice artwork, never as a winnable prize object.
+  { id: 13, label: 'K10,000',            prize: null,              color: '#c50e1f', isLoss: true,  isJackpot: true },
   { id: 14, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
 ];
 
@@ -97,7 +101,7 @@ function getWheelDayClient() {
   const now = new Date();
   const catMs = now.getTime() + (2 * 60 * 60 * 1000);
   const catDate = new Date(catMs);
-  if (catDate.getUTCHours() < 6) {
+  if (catDate.getUTCHours() < 9) {
     catDate.setUTCDate(catDate.getUTCDate() - 1);
   }
   return catDate.toISOString().split('T')[0];
@@ -1575,6 +1579,24 @@ export default function WheelWidget({ prefillUserId = null }) {
                 {/* TEXT LABELS */}
                 {WHEEL_SEGMENTS.map((seg, i) => {
                   const midAngle = i * SEG_ANGLE - 90 + SEG_ANGLE / 2;
+                  if (seg.isJackpot) {
+                    // Checked BEFORE isLoss: the jackpot is loss-classed for
+                    // result handling but keeps its marquee label.
+                    return (
+                      <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
+                        <text x={150 + 102} y={150 - 8} textAnchor="middle" dominantBaseline="central"
+                          fill="#ffd700" fontSize="15" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                          stroke="rgba(0,0,0,0.75)" strokeWidth="3" paintOrder="stroke" letterSpacing="0.5">
+                          K10,000
+                        </text>
+                        <text x={150 + 102} y={150 + 8} textAnchor="middle" dominantBaseline="central"
+                          fill="#fff" fontSize="10" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                          stroke="rgba(0,0,0,0.75)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="2">
+                          JACKPOT
+                        </text>
+                      </g>
+                    );
+                  }
                   if (seg.isLoss) {
                     return (
                       <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
@@ -1587,24 +1609,6 @@ export default function WheelWidget({ prefillUserId = null }) {
                           fill="white" fontSize="11" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
                           stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
                           TOMORROW
-                        </text>
-                      </g>
-                    );
-                  }
-                  if (seg.isJackpot) {
-                    // Two-line radial label — the 14-segment arc is too tight
-                    // for curved 7-character text. Gold on red, marquee-style.
-                    return (
-                      <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
-                        <text x={150 + 102} y={150 - 8} textAnchor="middle" dominantBaseline="central"
-                          fill="#ffd700" fontSize="15" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
-                          stroke="rgba(0,0,0,0.75)" strokeWidth="3" paintOrder="stroke" letterSpacing="0.5">
-                          K10,000
-                        </text>
-                        <text x={150 + 102} y={150 + 8} textAnchor="middle" dominantBaseline="central"
-                          fill="#fff" fontSize="10" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
-                          stroke="rgba(0,0,0,0.75)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="2">
-                          JACKPOT
                         </text>
                       </g>
                     );

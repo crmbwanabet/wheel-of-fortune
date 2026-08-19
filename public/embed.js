@@ -173,12 +173,12 @@
     } catch (e) { dbg('token read threw:', e && e.message); return null; }
   }
 
-  // --- Day calculation (CAT = UTC+2, resets at 06:00 CAT = 04:00 UTC) ---
+  // --- Day calculation (CAT = UTC+2, resets at 09:00 CAT = 07:00 UTC) ---
   function getWheelDay() {
     var now = new Date();
     var catMs = now.getTime() + (2 * 60 * 60 * 1000);
     var catDate = new Date(catMs);
-    if (catDate.getUTCHours() < 6) {
+    if (catDate.getUTCHours() < 9) {
       catDate.setUTCDate(catDate.getUTCDate() - 1);
     }
     return catDate.toISOString().split('T')[0];
@@ -804,7 +804,7 @@
     activeToken = token;
     activeCustomerId = id;
     if (!initialized) {
-      if (hasSpunToday(id)) { dbg('account', id, 'is cached as already-spun today - wheel stays hidden until 06:00 CAT. To clear: localStorage.removeItem("bwanabet_wheel_spun")'); return; }
+      if (hasSpunToday(id)) { dbg('account', id, 'is cached as already-spun today - wheel stays hidden until 09:00 CAT. To clear: localStorage.removeItem("bwanabet_wheel_spun")'); return; }
       dbg('building widget for', id);
       initWidget();                             // build the widget once
       // The freshly-mounted iframe posts 'bwanabet-wheel-ready' → sendAuth().
@@ -813,7 +813,7 @@
       dbg('account switched in place - re-keying widget to', id);
       widgetApi.closeWidget();
       widgetApi.hideButton();
-      if (hasSpunToday(id)) { dbg('account', id, 'is cached as already-spun today - wheel stays hidden until 06:00 CAT. To clear: localStorage.removeItem("bwanabet_wheel_spun")'); return; }
+      if (hasSpunToday(id)) { dbg('account', id, 'is cached as already-spun today - wheel stays hidden until 09:00 CAT. To clear: localStorage.removeItem("bwanabet_wheel_spun")'); return; }
       widgetApi.reload();                       // re-mount iframe → ready → sendAuth(new token)
     }
   }

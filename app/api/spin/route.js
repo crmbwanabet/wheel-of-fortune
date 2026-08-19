@@ -190,6 +190,10 @@ async function handleSpin(request) {
     // lasts all day instead of draining in the first hour. Test traffic is
     // unpaced. Sending UNPACED_CAP restores the old FCFS behaviour.
     p_release_cap: isTest ? UNPACED_CAP : releaseCap(Date.now()),
+    // This bundle renders the 14-segment wheel. claim_spin defaults to
+    // 'legacy' (old 10-segment indices) so the previous bundle keeps working
+    // until every caller has deployed — each caller declares its own layout.
+    p_layout: 'v2',
   });
   if (claimErr) {
     if (claimErr.code === '57014') {

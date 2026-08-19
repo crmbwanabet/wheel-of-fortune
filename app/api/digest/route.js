@@ -27,7 +27,7 @@ async function handleDigest(request) {
   const chatId = process.env.TELEGRAM_ALERT_CHAT_ID;
   // Report the last COMPLETE wheel-day, never the one in progress.
   //
-  // The cron fires at 04:10 UTC, ten minutes after the 04:00 UTC (06:00 CAT)
+  // The cron fires at 07:10 UTC, ten minutes after the 07:00 UTC (09:00 CAT)
   // reset, so getWheelDayDate() returns the day that has barely started. That
   // is not a rounding error: spins spike to ~50/min in the minutes after the
   // reset (vs ~8/min before it), so the digest was reporting several hundred

@@ -1,4 +1,6 @@
 -- Wheel of Fortune — 250-win K5..K200 ladder, hourly payout pacing, 14 segments
+-- Layout-aware: p_layout='legacy' (default) keeps the old 10-segment indices so
+-- the pre-deploy production bundle stays correct while previews run 'v2'.
 -- Date: 2026-08-19   Spec: docs/superpowers/specs/2026-08-19-prize-ladder-pacing-jackpot-design.md
 -- Safe to run multiple times.
 --
@@ -47,7 +49,8 @@ CREATE OR REPLACE FUNCTION public.claim_spin(
   p_cooldown_days integer DEFAULT 3,
   p_payout_mode text DEFAULT 'positions',
   p_prize_queue jsonb DEFAULT NULL,
-  p_release_cap integer DEFAULT 2147483647
+  p_release_cap integer DEFAULT 2147483647,
+  p_layout text DEFAULT 'legacy'
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -309,10 +312,19 @@ BEGIN
   END IF;
 
   IF v_is_win THEN
-    v_segment := CASE v_prize
-      WHEN 5 THEN 0 WHEN 10 THEN 2 WHEN 20 THEN 4
-      WHEN 50 THEN 6 WHEN 100 THEN 8 WHEN 200 THEN 10
-      ELSE NULL END;
+    -- Layout 'v2' = the 14-segment wheel (K5..K200 ascending on even
+    -- indices, jackpot at 12 unmapped). 'legacy' = the live 10-segment wheel,
+    -- kept so the old bundle renders correctly until the frontend deploys.
+    IF p_layout = 'v2' THEN
+      v_segment := CASE v_prize
+        WHEN 5 THEN 0 WHEN 10 THEN 2 WHEN 20 THEN 4
+        WHEN 50 THEN 6 WHEN 100 THEN 8 WHEN 200 THEN 10
+        ELSE NULL END;
+    ELSE
+      v_segment := CASE v_prize
+        WHEN 10 THEN 0 WHEN 50 THEN 2 WHEN 200 THEN 4 WHEN 20 THEN 6 WHEN 100 THEN 8
+        ELSE NULL END;
+    END IF;
     IF v_segment IS NULL THEN
       RAISE EXCEPTION 'Unknown prize amount: %', v_prize;
     END IF;
@@ -327,7 +339,11 @@ BEGIN
       RETURNING total_wins, total_budget_spent INTO v_wins, v_budget;
     END IF;
   ELSE
-    v_segment := (ARRAY[1, 3, 5, 7, 9, 11, 13])[1 + (floor(random() * 7))::int];
+    IF p_layout = 'v2' THEN
+      v_segment := (ARRAY[1, 3, 5, 7, 9, 11, 13])[1 + (floor(random() * 7))::int];
+    ELSE
+      v_segment := (ARRAY[1, 3, 5, 7, 9])[1 + (floor(random() * 5))::int];
+    END IF;
   END IF;
 
   INSERT INTO wheel_spin_log (
@@ -358,8 +374,8 @@ $function$;
 -- it must NOT be callable with the browser-exposed anon key. Only the server
 -- route (service_role) may execute it. (Closes a pre-existing gap: Supabase's
 -- default privileges had granted EXECUTE to anon/authenticated/PUBLIC.)
-REVOKE ALL ON FUNCTION public.claim_spin(date, text, text, text, text, integer, jsonb, boolean, integer, boolean, integer, text, jsonb, integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.claim_spin(date, text, text, text, text, integer, jsonb, boolean, integer, boolean, integer, text, jsonb, integer) FROM anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.claim_spin(date, text, text, text, text, integer, jsonb, boolean, integer, boolean, integer, text, jsonb, integer) TO service_role;
+REVOKE ALL ON FUNCTION public.claim_spin(date, text, text, text, text, integer, jsonb, boolean, integer, boolean, integer, text, jsonb, integer, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.claim_spin(date, text, text, text, text, integer, jsonb, boolean, integer, boolean, integer, text, jsonb, integer, text) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_spin(date, text, text, text, text, integer, jsonb, boolean, integer, boolean, integer, text, jsonb, integer, text) TO service_role;
 
 COMMIT;
