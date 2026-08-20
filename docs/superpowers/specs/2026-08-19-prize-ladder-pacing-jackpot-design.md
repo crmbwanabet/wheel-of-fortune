@@ -14,7 +14,15 @@ Status: implemented on branch design/prize-ladder-pacing-jackpot
    its marquee artwork), so no input can make the widget construct a K10,000
    win screen. A substituted (unrenderable) server index additionally discards
    the payload's win claim and reports `impossible_segment` telemetry.
-3. **`claim_spin` is layout-aware**: `p_layout` defaults to `'legacy'` (the old
+4. **Pool is 200 wins per day, not 250** (owner correction, 2026-08-20). The
+   original spec above set 250; the actual target was always 200. Corrected
+   before the ladder ever ran — no 250-prize pool was created in production, so
+   nothing was paid out under it. K2,000 over 200 wins makes the average win
+   exactly K10 (it was K8 at 250), which is why the K5 share drops from 83% to
+   54%: the budget has to go somewhere. The quota table is rescaled to sum to
+   200.
+
+5. **`claim_spin` is layout-aware**: `p_layout` defaults to `'legacy'` (the old
    10-segment indices) and the new bundle passes `'v2'` (14 segments). This
    decouples the migration from the frontend deploy: the migration can apply
    while the old production bundle is still live, which is what allows full
@@ -85,7 +93,7 @@ and the wheel should display a K10,000 jackpot that is impossible to land on.
 
 ## 2. Goals
 
-1. Prize ladder of K5–K200 totalling exactly K2,000 across 250 wins per day.
+1. Prize ladder of K5–K200 totalling exactly K2,000 across 200 wins per day.
 2. Wins paced across all 24 wheel-day hours instead of draining in the first hour.
 3. A K10,000 jackpot segment on the wheel that cannot be won, guaranteed by several
    independent mechanisms.
@@ -102,20 +110,25 @@ and the wheel should display a K10,000 jackpot that is impossible to land on.
 
 ### 4.1 Prize ladder
 
-`lib/algorithms.js` moves to a 250-prize pool totalling exactly K2,000:
+`lib/algorithms.js` moves to a 200-prize pool totalling exactly K2,000:
 
 | Prize | Count | Subtotal | Share of wins |
 | --- | --- | --- | --- |
-| K5 | 208 | K1,040 | 83.2% |
-| K10 | 26 | K260 | 10.4% |
-| K20 | 10 | K200 | 4.0% |
-| K50 | 4 | K200 | 1.6% |
-| K100 | 1 | K100 | 0.4% |
-| K200 | 1 | K200 | 0.4% |
-| **Total** | **250** | **K2,000** | **100%** |
+| K5 | 108 | K540 | 54.0% |
+| K10 | 76 | K760 | 38.0% |
+| K20 | 10 | K200 | 5.0% |
+| K50 | 4 | K200 | 2.0% |
+| K100 | 1 | K100 | 0.5% |
+| K200 | 1 | K200 | 0.5% |
+| **Total** | **200** | **K2,000** | **100%** |
 
-Average win K8.00. Against ~1,572 qualified spins/day this is a ~15.9% win rate among
-qualified players, versus 6.4% today.
+Average win exactly K10.00. Against ~1,572 qualified spins/day this is a ~12.7% win
+rate among qualified players, versus 6.4% today.
+
+The top of the ladder is unchanged from the 250 version; the reduction is absorbed
+entirely by moving wins from K5 into K10. That is forced arithmetic, not preference:
+K2,000 over 200 wins fixes the mean at K10, so an 83% K5 share is only reachable by
+concentrating the remaining budget into more large prizes.
 
 The five-algorithm variety mechanism is retained because positions mode is the rollback
 path, but **every algorithm must use the same six amounts** `{5,10,20,50,100,200}`. An
@@ -128,34 +141,34 @@ A fixed 24-entry quota table shaped to the 7-day average traffic curve
 (2026-08-12 → 2026-08-18). Quotas are per wheel-day hour; the wheel day starts at
 04:00 UTC = 06:00 CAT.
 
-| Wheel hr | CAT | % traffic | Quota | Cumulative cap |
-| --- | --- | --- | --- | --- |
-| 0 | 06 | 3.23 | 8 | 8 |
-| 1 | 07 | 4.91 | 12 | 20 |
-| 2 | 08 | 7.22 | 18 | 38 |
-| 3 | 09 | 9.86 | 25 | 63 |
-| 4 | 10 | 10.08 | 25 | 88 |
-| 5 | 11 | 10.52 | 26 | 114 |
-| 6 | 12 | 7.41 | 19 | 133 |
-| 7 | 13 | 6.02 | 15 | 148 |
-| 8 | 14 | 6.86 | 17 | 165 |
-| 9 | 15 | 4.54 | 11 | 176 |
-| 10 | 16 | 4.30 | 11 | 187 |
-| 11 | 17 | 5.04 | 13 | 200 |
-| 12 | 18 | 4.11 | 10 | 210 |
-| 13 | 19 | 3.05 | 8 | 218 |
-| 14 | 20 | 2.21 | 6 | 224 |
-| 15 | 21 | 2.42 | 6 | 230 |
-| 16 | 22 | 2.20 | 6 | 236 |
-| 17 | 23 | 1.92 | 5 | 241 |
-| 18 | 00 | 1.28 | 3 | 244 |
-| 19 | 01 | 0.88 | 2 | 246 |
-| 20 | 02 | 0.40 | 1 | 247 |
-| 21 | 03 | 0.51 | 1 | 248 |
-| 22 | 04 | 0.48 | 1 | 249 |
-| 23 | 05 | 0.55 | 1 | 250 |
+| Wheel hr | CAT | Quota | Cumulative cap |
+| --- | --- | --- | --- |
+| 0 | 09 | 20 | 20 |
+| 1 | 10 | 20 | 40 |
+| 2 | 11 | 20 | 60 |
+| 3 | 12 | 15 | 75 |
+| 4 | 13 | 12 | 87 |
+| 5 | 14 | 14 | 101 |
+| 6 | 15 | 9 | 110 |
+| 7 | 16 | 9 | 119 |
+| 8 | 17 | 10 | 129 |
+| 9 | 18 | 8 | 137 |
+| 10 | 19 | 6 | 143 |
+| 11 | 20 | 5 | 148 |
+| 12 | 21 | 5 | 153 |
+| 13 | 22 | 5 | 158 |
+| 14 | 23 | 4 | 162 |
+| 15 | 00 | 2 | 164 |
+| 16 | 01 | 2 | 166 |
+| 17 | 02 | 1 | 167 |
+| 18 | 03 | 1 | 168 |
+| 19 | 04 | 1 | 169 |
+| 20 | 05 | 1 | 170 |
+| 21 | 06 | 6 | 176 |
+| 22 | 07 | 10 | 186 |
+| 23 | 08 | 14 | 200 |
 
-Quotas sum to exactly 250; the final cumulative cap is exactly the pool size, so the
+Quotas sum to exactly 200; the final cumulative cap is exactly the pool size, so the
 whole pot is releasable by end of day.
 
 **Rollover is implicit.** The cap is cumulative, so quota unused in an early hour
@@ -167,9 +180,9 @@ spins in that hour lose. This reuses the existing empty-pot path exactly.
 New module `lib/releaseCap.js`:
 
 ```js
-export const HOURLY_QUOTAS = [8,12,18,25,25,26,19,15,17,11,11,13,
-                              10,8,6,6,6,5,3,2,1,1,1,1];
-export function wheelHour(nowMs)      // 0..23, CAT-based, 06:00 CAT = hour 0
+export const HOURLY_QUOTAS = [20,20,20,15,12,14,9,9,10,8,6,5,
+                              5,5,4,2,2,1,1,1,1,6,10,14];
+export function wheelHour(nowMs)      // 0..23, CAT-based, 09:00 CAT = hour 0
 export function releaseCap(nowMs)     // cumulative prizes released by now
 ```
 
@@ -279,10 +292,10 @@ re-`REVOKE`/`GRANT` so only `service_role` can execute.
 
 ## 6. Testing
 
-- `releaseCap`: quotas sum to 250; cap is monotonic; cap at final hour equals pool size;
-  hour boundaries land correctly across the 06:00 CAT day rollover and across UTC
+- `releaseCap`: quotas sum to 200; cap is monotonic; cap at final hour equals pool size;
+  hour boundaries land correctly across the 09:00 CAT day rollover and across UTC
   midnight; unused early quota is still available later.
-- Ladder: counts sum to 250 and amounts sum to exactly 2000, asserted per algorithm.
+- Ladder: counts sum to 200 and amounts sum to exactly 2000, asserted per algorithm.
 - Jackpot, exhaustive: for every algorithm × every prize in its pool, assert the mapped
   segment is never 12; assert 12 is absent from both segment sets; assert
   `prizeToSegmentIndex(10000)` throws; property-test `generatePrizePool` output against
