@@ -7,22 +7,34 @@ import { hasSpun, withSpun } from '@/lib/spunCache.mjs';
 import { decideAvailability } from '@/lib/availability.mjs';
 import { classifySpinRecovery } from '@/lib/spinRecovery';
 import { computeLanding } from '@/lib/wheelLanding';
+import { resolveLandingSegment } from '@/lib/landingSegment';
 import { msUntilNextWheelReset, splitCountdown } from '@/lib/countdown';
 
 // ============================================================================
-// DATA — 10 segments: K10, K20, K50, K100, K200, Try Again Tomorrow ×5
+// DATA — 14 segments: six real prizes on even indices 0..10 in ascending
+// order, the DISPLAY-ONLY K10,000 jackpot at index 12, losses on odds.
+// Index 12 is unreachable: the server maps prizes only to 0,2,4,6,8,10 and
+// losses only to odd indices. See lib/jackpotSafety.test.mjs.
 // ============================================================================
 const WHEEL_SEGMENTS = [
-  { id: 1,  label: 'K10',                prize: { kwacha: 10 },  color: '#00e5ff', isLoss: false },
-  { id: 2,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
-  { id: 3,  label: 'K50',                prize: { kwacha: 50 },  color: '#d500f9', isLoss: false },
-  { id: 4,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
-  { id: 5,  label: 'K200',               prize: { kwacha: 200 }, color: '#ffd600', isLoss: false },
-  { id: 6,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
-  { id: 7,  label: 'K20',                prize: { kwacha: 20 },  color: '#00e676', isLoss: false },
-  { id: 8,  label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
-  { id: 9,  label: 'K100',               prize: { kwacha: 100 }, color: '#ff6d00', isLoss: false },
-  { id: 10, label: 'Try Again Tomorrow', prize: null,            color: '#78909c', isLoss: true },
+  { id: 1,  label: 'K5',                 prize: { kwacha: 5 },     color: '#00e5ff', isLoss: false },
+  { id: 2,  label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  { id: 3,  label: 'K10',                prize: { kwacha: 10 },    color: '#00e676', isLoss: false },
+  { id: 4,  label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  { id: 5,  label: 'K20',                prize: { kwacha: 20 },    color: '#d500f9', isLoss: false },
+  { id: 6,  label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  { id: 7,  label: 'K50',                prize: { kwacha: 50 },    color: '#ff6d00', isLoss: false },
+  { id: 8,  label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  { id: 9,  label: 'K100',               prize: { kwacha: 100 },   color: '#ffd600', isLoss: false },
+  { id: 10, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  { id: 11, label: 'K200',               prize: { kwacha: 200 },   color: '#ffab00', isLoss: false },
+  { id: 12, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
+  // The jackpot is DISPLAY-ONLY: prize:null and isLoss:true mean that even if
+  // some future code path ever set this segment as the result, the widget
+  // would render a loss with no amount — the string "K10,000" exists only as
+  // slice artwork, never as a winnable prize object.
+  { id: 13, label: 'K10,000',            prize: null,              color: '#c50e1f', isLoss: true,  isJackpot: true },
+  { id: 14, label: 'Try Again Tomorrow', prize: null,              color: '#78909c', isLoss: true },
 ];
 
 const NUM = WHEEL_SEGMENTS.length;
@@ -89,7 +101,7 @@ function getWheelDayClient() {
   const now = new Date();
   const catMs = now.getTime() + (2 * 60 * 60 * 1000);
   const catDate = new Date(catMs);
-  if (catDate.getUTCHours() < 6) {
+  if (catDate.getUTCHours() < 9) {
     catDate.setUTCDate(catDate.getUTCDate() - 1);
   }
   return catDate.toISOString().split('T')[0];
@@ -658,9 +670,27 @@ export default function WheelWidget({ prefillUserId = null }) {
             const { winIndex, data } = pendingResultRef.current;
             pendingResultRef.current = null;
 
-            winSegmentRef.current = WHEEL_SEGMENTS[winIndex];
+            // The server is the authority on the prize amount; the segment
+            // table only supplies the slice we stop on. Reading kwacha from
+            // the payload keeps the displayed amount correct even if a stale
+            // bundle has a different layout, and resolveLandingSegment
+            // substitutes a loss slice for anything unrenderable (jackpot
+            // index, out-of-range) so the wheel never crashes mid-spin.
+            const landing = resolveLandingSegment(winIndex);
+            const base = WHEEL_SEGMENTS[landing.index];
+            // API responses say `win`; the recovery path says `won` — accept both.
+            // A substituted landing means the index was unrenderable (jackpot,
+            // out-of-range, stale bundle) — the whole payload is untrusted then,
+            // so the claimed win is discarded too, never shown on a loss slice.
+            if (landing.substituted) {
+              reportClientError('impossible_segment', `index ${winIndex}`, null, null);
+            }
+            const isWin = !landing.substituted && Boolean(data && (data.win ?? data.won));
+            winSegmentRef.current = isWin
+              ? { ...base, isLoss: false, prize: { kwacha: data.prize?.kwacha ?? base.prize?.kwacha ?? 0 } }
+              : { ...base, isLoss: true, prize: null };
 
-            const segCenter = winIndex * SEG_ANGLE + SEG_ANGLE / 2;
+            const segCenter = landing.index * SEG_ANGLE + SEG_ANGLE / 2;
             const jitter = (Math.random() - 0.5) * (SEG_ANGLE * 0.5);
             const targetRemainder = (360 - segCenter + jitter + 360) % 360;
             let remaining = targetRemainder - (currentAngle % 360);
@@ -752,10 +782,18 @@ export default function WheelWidget({ prefillUserId = null }) {
       const rec = classifySpinRecovery(status, NUM);
       if (rec.kind === 'recovered') {
         markSpun(spunCustomerId);
-        winSegmentRef.current = WHEEL_SEGMENTS[rec.segmentIndex];
+        const recLanding = resolveLandingSegment(rec.segmentIndex);
+        const recBase = WHEEL_SEGMENTS[recLanding.index];
+        if (recLanding.substituted) {
+          reportClientError('impossible_segment', `recovery index ${rec.segmentIndex}`, null, spunCustomerId);
+        }
+        const recWon = !recLanding.substituted && rec.won;
+        winSegmentRef.current = recWon
+          ? { ...recBase, isLoss: false, prize: { kwacha: rec.prizeAmount ?? recBase.prize?.kwacha ?? 0 } }
+          : { ...recBase, isLoss: true, prize: null };
         pendingResultRef.current = {
-          winIndex: rec.segmentIndex,
-          data: { segmentIndex: rec.segmentIndex, won: rec.won, prize: rec.prizeAmount },
+          winIndex: recLanding.index,
+          data: { segmentIndex: recLanding.index, won: recWon, prize: recWon ? { kwacha: rec.prizeAmount } : null },
         };
         return;
       }
@@ -803,11 +841,12 @@ export default function WheelWidget({ prefillUserId = null }) {
         }
         if (data.error) {
           reportClientError('spin_failed', data.error || 'unknown', null, spunCustomerId);
-          // Land on a random loss segment on error too
-          const lossIndices = WHEEL_SEGMENTS.map((s, i) => s.isLoss ? i : -1).filter(i => i >= 0);
-          const randomLoss = lossIndices[Math.floor(Math.random() * lossIndices.length)];
-          pendingResultRef.current = { winIndex: randomLoss, data: { segmentIndex: randomLoss, won: false, prize: 0 } };
-          winSegmentRef.current = WHEEL_SEGMENTS[randomLoss];
+          // Land on a random loss segment on error too. resolveLandingSegment
+          // with an invalid index always substitutes from the shared loss set,
+          // which also keeps the jackpot slice out of the fallback pool.
+          const fallback = resolveLandingSegment(-1);
+          pendingResultRef.current = { winIndex: fallback.index, data: { segmentIndex: fallback.index, won: false, prize: 0 } };
+          winSegmentRef.current = { ...WHEEL_SEGMENTS[fallback.index], isLoss: true, prize: null };
           return;
         }
         markSpun(spunCustomerId);
@@ -1463,6 +1502,19 @@ export default function WheelWidget({ prefillUserId = null }) {
                     <stop offset="97%" stopColor="#fff" stopOpacity="0.04" />
                     <stop offset="100%" stopColor="#fff" stopOpacity="0.06" />
                   </radialGradient>
+                  {/* Jackpot — deep-to-bright red, lit from the rim like a marquee */}
+                  <radialGradient id="jackpotGrad" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#7a0212" />
+                    <stop offset="55%" stopColor="#c50e1f" />
+                    <stop offset="85%" stopColor="#ff1744" />
+                    <stop offset="100%" stopColor="#ff5252" />
+                  </radialGradient>
+                  {/* Jackpot shimmer — bright band that sweeps the slice */}
+                  <linearGradient id="jackpotSheen" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0" />
+                    <stop offset="50%" stopColor="#ffd700" stopOpacity="0.45" />
+                    <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+                  </linearGradient>
                 </defs>
 
                 {/* Segments */}
@@ -1472,6 +1524,22 @@ export default function WheelWidget({ prefillUserId = null }) {
                   const s = { x: 150 + 148 * Math.cos(sA * Math.PI / 180), y: 150 + 148 * Math.sin(sA * Math.PI / 180) };
                   const e = { x: 150 + 148 * Math.cos(eA * Math.PI / 180), y: 150 + 148 * Math.sin(eA * Math.PI / 180) };
                   const path = `M 150 150 L ${s.x} ${s.y} A 148 148 0 0 1 ${e.x} ${e.y} Z`;
+                  if (seg.isJackpot) {
+                    // Marquee treatment: red radial gradient, gold rim, and a
+                    // pulsing gold sheen (SMIL skipped on low-end devices).
+                    return (
+                      <g key={seg.id}>
+                        <path d={path} fill="url(#jackpotGrad)" />
+                        <path d={path} fill="url(#jackpotSheen)" opacity="0.35">
+                          {!isLowEnd && <animate attributeName="opacity" values="0.1;0.55;0.1" dur="1.6s" repeatCount="indefinite" />}
+                        </path>
+                        <path d={path} fill="none" stroke="#ffd700" strokeWidth="2.5">
+                          {!isLowEnd && <animate attributeName="stroke-opacity" values="1;0.45;1" dur="1.6s" repeatCount="indefinite" />}
+                        </path>
+                        <path d={path} fill="url(#segGloss)" />
+                      </g>
+                    );
+                  }
                   return (
                     <g key={seg.id}>
                       <path d={path} fill={seg.color} />
@@ -1511,6 +1579,24 @@ export default function WheelWidget({ prefillUserId = null }) {
                 {/* TEXT LABELS */}
                 {WHEEL_SEGMENTS.map((seg, i) => {
                   const midAngle = i * SEG_ANGLE - 90 + SEG_ANGLE / 2;
+                  if (seg.isJackpot) {
+                    // Checked BEFORE isLoss: the jackpot is loss-classed for
+                    // result handling but keeps its marquee label.
+                    return (
+                      <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
+                        <text x={150 + 102} y={150 - 8} textAnchor="middle" dominantBaseline="central"
+                          fill="#ffd700" fontSize="15" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                          stroke="rgba(0,0,0,0.75)" strokeWidth="3" paintOrder="stroke" letterSpacing="0.5">
+                          K10,000
+                        </text>
+                        <text x={150 + 102} y={150 + 8} textAnchor="middle" dominantBaseline="central"
+                          fill="#fff" fontSize="10" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                          stroke="rgba(0,0,0,0.75)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="2">
+                          JACKPOT
+                        </text>
+                      </g>
+                    );
+                  }
                   if (seg.isLoss) {
                     return (
                       <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
@@ -1528,8 +1614,8 @@ export default function WheelWidget({ prefillUserId = null }) {
                     );
                   }
                   return (
-                    <text key={`t${i}`} fill="white" fontSize="26" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
-                      stroke="rgba(0,0,0,0.6)" strokeWidth="3" paintOrder="stroke" letterSpacing="2">
+                    <text key={`t${i}`} fill="white" fontSize="17" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                      stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="1">
                       <textPath href={`#segArc${i}`} startOffset="50%" textAnchor="middle">
                         {seg.label}
                       </textPath>

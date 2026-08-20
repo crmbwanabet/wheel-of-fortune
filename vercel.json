@@ -4,7 +4,7 @@
   },
   "regions": ["dub1"],
   "crons": [
-    { "path": "/api/digest", "schedule": "10 4 * * *" },
+    { "path": "/api/digest", "schedule": "10 7 * * *" },
     { "path": "/api/gate-monitor", "schedule": "*/10 * * * *" }
   ]
 }
