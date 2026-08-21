@@ -6,7 +6,8 @@ import { cooldownDigestLines } from '@/lib/cooldownDigest';
 import { shiftWheelDay } from '@/lib/cooldown';
 import { reportError } from '@/lib/telemetry';
 import { sendTelegram } from '@/lib/telegramSend';
-import { lossesLine, winsSeenLine, potExhausted, LOSS_REASONS } from '@/lib/digestLines';
+import { lossesLine, winsSeenLine, potExhausted, LOSS_REASONS, promoLine } from '@/lib/digestLines';
+import { PROMO_SITES } from '@/lib/promoConfig';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,6 +109,27 @@ async function handleDigest(request) {
       lines.push(`(errors delivered live; see alerts)`);
       text = lines.join('\n');
     }
+
+    // Promo funnel, per configured domain, for the same wheel-day window
+    // (07:00 UTC boundaries). Idle domains produce no line.
+    const dayStart = new Date(`${day}T07:00:00Z`);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const promoLines = [];
+    for (const host of Object.keys(PROMO_SITES)) {
+      const counts = {};
+      for (const ev of ['view', 'spin', 'claim_click']) {
+        const { count, error } = await supabase
+          .from('promo_events')
+          .select('id', { count: 'exact', head: true })
+          .eq('host', host).eq('event', ev)
+          .gte('created_at', dayStart.toISOString()).lt('created_at', dayEnd.toISOString());
+        if (error) throw error;
+        counts[ev] = count ?? 0;
+      }
+      const pl = promoLine(host, counts);
+      if (pl) promoLines.push(pl);
+    }
+    if (promoLines.length) text = `${text}\n${promoLines.join('\n')}`;
   } catch (err) {
     readFailed = true;
     waitUntil(reportError(err, { route: 'digest', status: 500, code: 'digest_read_failed' }));
