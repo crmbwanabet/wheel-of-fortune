@@ -177,6 +177,23 @@ async function fetchSpinStatus(token, fingerprint) {
   }
 }
 
+// Tell the server the result card actually rendered. Fire-and-forget, once
+// per page load; keepalive so a tab closing on the card still delivers it.
+// Real traffic only — test spins have no BwanaBet token.
+let _ackSent = false;
+function ackResultShown(token, result) {
+  if (_ackSent || !token || !result) return;
+  _ackSent = true;
+  try {
+    fetch('/api/spin-ack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({ token, won: !result.isLoss, prize: result.prize?.kwacha ?? null }),
+    }).catch(() => {});
+  } catch { /* never break the result screen */ }
+}
+
 // Best-effort client error reporter → /api/telemetry. Deduped to one report
 // per signature per page load; fully fire-and-forget (never throws/awaits).
 const _reportedSigs = new Set();
@@ -633,6 +650,7 @@ export default function WheelWidget({ prefillUserId = null }) {
                   setScreen('result');
                   setSpinResult(segment);
                   setShowSlowingText(false);
+                  if (!isTestMode) ackResultShown(authTokenRef.current, segment);
 
                   if (segment && !segment.isLoss) {
                     setShowFlash(true);

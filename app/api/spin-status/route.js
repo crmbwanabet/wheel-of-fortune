@@ -5,6 +5,8 @@ import { verifyBwanaToken, TokenError } from '@/lib/bwanaAuth.mjs';
 import { reportError } from '@/lib/telemetry';
 import { waitUntil } from '@vercel/functions';
 
+const MINCOUNT_TOKEN = Number(process.env.TELEMETRY_MINCOUNT_TOKEN) || 10;
+
 // Reports whether the logged-in customer still has today's spin available.
 // Dedupes on customer id only (read-only) — the atomic claim in /api/spin
 // remains the source of truth, so this can fail open on server errors
@@ -27,6 +29,9 @@ async function handleStatus(request) {
     customerId = verifyBwanaToken(body.token).id;
   } catch (err) {
     const code = err instanceof TokenError && err.code === 'expired' ? 'token_expired' : 'invalid_token';
+    if (code === 'invalid_token') {
+      waitUntil(reportError(err, { route: 'spin-status', status: 401, code: 'invalid_token', minCount: MINCOUNT_TOKEN }));
+    }
     return NextResponse.json({ available: false, error: code, reason: code }, { status: 401 });
   }
 

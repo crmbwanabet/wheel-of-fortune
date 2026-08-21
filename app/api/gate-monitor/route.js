@@ -46,9 +46,14 @@ async function handle(request) {
 
     const ev = evaluateGateHealth(rows || [], THRESHOLDS);
 
-    const { data: stateRows } = await supabase
+    const { data: stateRows, error: stateErr } = await supabase
       .from('wheel_monitor_state')
       .select('condition,firing,last_alert_at');
+    if (stateErr) {
+      // Continue with empty prior state (every firing condition re-alerts),
+      // but say so — otherwise recoveries are silently dropped.
+      waitUntil(reportError(stateErr, { route: 'gate-monitor', status: 200, code: 'monitor_state_read_failed' }));
+    }
     const priorState = {};
     for (const s of stateRows || []) {
       priorState[s.condition] = {
@@ -74,7 +79,11 @@ async function handle(request) {
       last_value: cond.value,
       updated_at: nowIso,
     }));
-    await supabase.from('wheel_monitor_state').upsert(upserts, { onConflict: 'condition' });
+    const { error: upsertErr } = await supabase.from('wheel_monitor_state').upsert(upserts, { onConflict: 'condition' });
+    if (upsertErr) {
+      // State did not advance: the same alert will repeat next run.
+      waitUntil(reportError(upsertErr, { route: 'gate-monitor', status: 200, code: 'monitor_state_write_failed' }));
+    }
 
     return NextResponse.json({
       ok: true,
@@ -84,6 +93,7 @@ async function handle(request) {
   } catch (err) {
     // A broken monitor must itself be visible.
     waitUntil(reportError(err, { route: 'gate-monitor', status: 500, code: 'monitor_query_failed' }));
-    return NextResponse.json({ ok: false }, { status: 200 });
+    // Honest status: Vercel's cron log should show this run as failed.
+    return NextResponse.json({ ok: false }, { status: 500 });
   }
 }

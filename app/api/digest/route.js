@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { getSupabase } from '@/lib/supabase';
-import { getWheelDayDate, WINNABLE_POSITIONS } from '@/lib/algorithms';
+import { getWheelDayDate, WINNABLE_POSITIONS, POOL_SIZE, DAILY_BUDGET } from '@/lib/algorithms';
 import { cooldownDigestLines } from '@/lib/cooldownDigest';
 import { shiftWheelDay } from '@/lib/cooldown';
+import { reportError } from '@/lib/telemetry';
+import { sendTelegram } from '@/lib/telegramSend';
+import { lossesLine, winsSeenLine, potExhausted, LOSS_REASONS } from '@/lib/digestLines';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,48 +43,48 @@ async function handleDigest(request) {
   const day = shiftWheelDay(getWheelDayDate(), -1);
 
   let text;
+  let readFailed = false;
   try {
     const supabase = getSupabase();
-    const { data: state } = await supabase
-      .from('wheel_daily_state')
-      .select('total_wins,total_budget_spent,carryover_in')
-      .eq('day_date', day).eq('test_bucket', '').maybeSingle();
+    const base = (q) => q.eq('day_date', day).eq('test_bucket', '');
+    const countWhere = async (apply) => {
+      const { count, error } = await apply(base(supabase.from('wheel_spin_log').select('id', { count: 'exact', head: true })));
+      if (error) throw error;
+      return count ?? 0;
+    };
+
+    const { data: state, error: stateErr } = await base(
+      supabase.from('wheel_daily_state').select('total_wins,total_budget_spent,carryover_in'),
+    ).maybeSingle();
+    if (stateErr) throw stateErr;
+
     // Spin count = one row per spin. wheel_daily_state.total_spins is NOT
     // maintained (would be a hot-row contention point); the row count / per-day
     // sequence is the source of truth.
-    const { count: spinCount } = await supabase
-      .from('wheel_spin_log')
-      .select('id', { count: 'exact', head: true })
-      .eq('day_date', day).eq('test_bucket', '');
-    const { count: cooldownBlocked } = await supabase
-      .from('wheel_spin_log')
-      .select('id', { count: 'exact', head: true })
-      .eq('day_date', day).eq('test_bucket', '').eq('cooldown_blocked', true);
-    const { count: carryoverAwarded } = await supabase
-      .from('wheel_spin_log')
-      .select('id', { count: 'exact', head: true })
-      .eq('day_date', day).eq('test_bucket', '').eq('carryover_awarded', true);
-
-    const spins = spinCount ?? 0;
+    const spins = await countWhere((q) => q);
     if (spins === 0) {
       text = `📊 Wheel daily digest — ${day}\nQuiet day: 0 spins.`;
     } else {
+      const cooldownBlocked = await countWhere((q) => q.eq('cooldown_blocked', true));
+      const carryoverAwarded = await countWhere((q) => q.eq('carryover_awarded', true));
+      const winsSeen = await countWhere((q) => q.eq('won', true).not('result_seen_at', 'is', null));
+      const lossCounts = {};
+      for (const r of LOSS_REASONS) lossCounts[r] = await countWhere((q) => q.eq('loss_reason', r));
+
       const queueMode = process.env.WHEEL_PAYOUT_MODE === 'queue';
+      const totalWins = state?.total_wins ?? 0;
       let spinsLine;
       let exhaustLine = null;
       if (queueMode) {
         spinsLine = `Spins: ${spins}`;
-        // Pot exhausted = the 100th win. Its timestamp tells us when the day's
-        // K2,000 ran out (spec: expected ~06:45 CAT at current traffic).
-        if ((state?.total_wins ?? 0) >= 100) {
-          const { data: hundredth } = await supabase
-            .from('wheel_spin_log')
-            .select('created_at')
-            .eq('day_date', day).eq('test_bucket', '').eq('won', true)
-            .order('created_at', { ascending: true })
-            .range(99, 99);
-          if (hundredth?.[0]?.created_at) {
-            const catMs = Date.parse(hundredth[0].created_at) + 2 * 60 * 60 * 1000;
+        // Pot exhausted = the POOL_SIZE-th win; its timestamp says when the
+        // day's budget ran out.
+        if (potExhausted(totalWins, POOL_SIZE)) {
+          const { data: last } = await base(
+            supabase.from('wheel_spin_log').select('created_at').eq('won', true).order('created_at', { ascending: true }),
+          ).range(POOL_SIZE - 1, POOL_SIZE - 1);
+          if (last?.[0]?.created_at) {
+            const catMs = Date.parse(last[0].created_at) + 2 * 60 * 60 * 1000;
             exhaustLine = `Pot exhausted at ${new Date(catMs).toISOString().slice(11, 16)} CAT`;
           }
         }
@@ -93,27 +97,29 @@ async function handleDigest(request) {
       const lines = [
         `📊 Wheel daily digest — ${day}`,
         spinsLine,
-        `Wins: ${state?.total_wins ?? 0} → K${state?.total_budget_spent ?? 0} / K2,000 budget`,
+        `Wins: ${totalWins} → K${state?.total_budget_spent ?? 0} / K${DAILY_BUDGET.toLocaleString('en-US')} budget`,
       ];
       if (exhaustLine) lines.push(exhaustLine);
+      const ws = winsSeenLine(winsSeen, totalWins);
+      if (ws) lines.push(ws);
+      const ll = lossesLine(lossCounts);
+      if (ll) lines.push(ll);
       lines.push(...cooldownDigestLines(cooldownBlocked, carryoverAwarded, state?.carryover_in));
       lines.push(`(errors delivered live; see alerts)`);
       text = lines.join('\n');
     }
   } catch (err) {
+    readFailed = true;
+    waitUntil(reportError(err, { route: 'digest', status: 500, code: 'digest_read_failed' }));
     text = `📊 Wheel daily digest — ${day}\n⚠️ digest read failed: ${(err && err.message) || 'error'}`;
   }
 
-  if (token && chatId) {
-    try {
-      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text }),
-      });
-    } catch (err) {
-      console.error('[digest] send failed:', err && err.message);
-    }
+  const delivered = await sendTelegram({ token, chatId, text, source: 'digest' });
+  if (!delivered) {
+    waitUntil(reportError(new Error('digest not delivered'), { route: 'digest', status: 500, code: 'digest_send_failed' }));
   }
-  return NextResponse.json({ ok: true });
+  // An honest status code: Vercel's cron log should show a digest that did
+  // not read or did not send as a failure, not a success.
+  const ok = delivered && !readFailed;
+  return NextResponse.json({ ok, day }, { status: ok ? 200 : 500 });
 }

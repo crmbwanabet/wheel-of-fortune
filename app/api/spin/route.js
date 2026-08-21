@@ -45,10 +45,18 @@ const SPIN_RATE_WINDOW_SEC = Number(process.env.SPIN_RATE_WINDOW_SEC) || 60;
 // Env-tunable without a migration; 0 disables the rule (and carry-over with it).
 const SPIN_COOLDOWN_DAYS = resolveCooldownDays(process.env.SPIN_COOLDOWN_DAYS);
 
+// Signal thresholds: these conditions are normal in ones and twos and only
+// matter in volume, so they alert when the 5-min count reaches the threshold.
+const MINCOUNT_TOKEN = Number(process.env.TELEMETRY_MINCOUNT_TOKEN) || 10;
+const MINCOUNT_RATELIMIT = Number(process.env.TELEMETRY_MINCOUNT_RATELIMIT) || 20;
+
 async function handleSpin(request) {
   // Kill-switch: when set, return immediately WITHOUT touching the database.
   // Used to relieve DB connection pressure during an incident.
   if (process.env.SPIN_MAINTENANCE === '1') {
+    // The wheel is deliberately down. One alert, then 5-min rollups with the
+    // count of rejected spins for as long as the flag stays on.
+    waitUntil(reportError(new Error('SPIN_MAINTENANCE=1 — spins rejected'), { route: 'spin', status: 503, code: 'maintenance' }));
     return NextResponse.json({ error: 'maintenance' }, { status: 503 });
   }
 
@@ -68,6 +76,7 @@ async function handleSpin(request) {
 
   // Authenticated test traffic bypasses the public rate limiter.
   if (!isTest && !(await checkRateLimit('spin', ip, SPIN_RATE_LIMIT, SPIN_RATE_WINDOW_SEC))) {
+    waitUntil(reportError(new Error(`rate limited ip=${ip}`), { route: 'spin', status: 429, code: 'rate_limited', minCount: MINCOUNT_RATELIMIT }));
     return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
   }
 
@@ -86,6 +95,11 @@ async function handleSpin(request) {
       cleanId = verifyBwanaToken(token).id;
     } catch (err) {
       const code = err instanceof TokenError && err.code === 'expired' ? 'token_expired' : 'invalid_token';
+      // Expired sessions are normal. A burst of INVALID tokens is not — it is
+      // what a BwanaBet token-format change looks like from here.
+      if (code === 'invalid_token') {
+        waitUntil(reportError(err, { route: 'spin', status: 401, code: 'invalid_token', minCount: MINCOUNT_TOKEN }));
+      }
       return NextResponse.json({ error: code }, { status: 401 });
     }
   }
@@ -216,6 +230,13 @@ async function handleSpin(request) {
     return NextResponse.json({ error: 'server_error' }, { status: 500 });
   }
 
+  // Day-init assertion. A queue that failed validation is stored as NULL and
+  // every spin then loses normally — K0 paid, all monitors green. The RPC now
+  // names that loss, so the FIRST spin of a broken day alerts.
+  if (result.loss_reason === 'queue_null') {
+    waitUntil(reportError(new Error(`prize_queue is NULL for ${dayDate} bucket='${bucket}'`), { route: 'spin', status: 200, code: 'queue_missing' }));
+  }
+
   // Telegram notification on real (non-test) wins — dispatched AFTER the response
   // via waitUntil so the spinner returns immediately. waitUntil keeps the
   // serverless function alive for the send without blocking the spin result.
@@ -229,7 +250,15 @@ async function handleSpin(request) {
         spinNumber: result.spin_number,
         payoutMode: WHEEL_PAYOUT_MODE,
         poolSize: prizeQueue.length,
-      }).catch(err => console.error('[spin] Telegram notify failed:', err?.message))
+      }).then((delivered) => {
+        if (!delivered) {
+          // The DB row is the payout record the ops group never received.
+          return reportError(
+            new Error(`win notification not delivered: customer=${cleanId} prize=K${result.prize_amount} spin=${result.spin_number} win#${result.wins_today}`),
+            { route: 'spin', status: 200, code: 'win_notify_failed', customerId: cleanId },
+          );
+        }
+      }).catch((err) => reportError(err, { route: 'spin', status: 200, code: 'win_notify_failed', customerId: cleanId }))
     );
   }
 
