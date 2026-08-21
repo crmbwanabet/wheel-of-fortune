@@ -1,0 +1,126 @@
+/* Promo wheel page. Scoped by the .promo- prefix; globals.css already locks
+   html/body to the viewport, which is exactly what a full-screen page wants. */
+
+.promo-root {
+  position: fixed; inset: 0;
+  display: grid; place-items: center;
+  background-color: #080612;
+  background-size: cover; background-position: center;
+  color: #fff; text-align: center;
+  font-family: var(--font-brand), "Roboto Condensed", sans-serif;
+  overflow: hidden;
+}
+.promo-layout {
+  display: grid; gap: 18px; width: min(100vw, 1400px); padding: 20px 20px 28px;
+  grid-template-areas: "head" "wheel" "cta" "fine";
+  justify-items: center; align-content: center;
+}
+@media (min-width: 768px) and (orientation: landscape) {
+  .promo-layout {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "wheel head" "wheel cta" "wheel fine";
+    align-items: center; gap: 12px 48px; padding: 40px 64px;
+  }
+  .promo-head, .promo-cta, .promo-fine { justify-self: start; text-align: left; }
+}
+.promo-head {
+  grid-area: head; margin: 0; font-weight: 900; text-transform: uppercase; letter-spacing: -0.01em;
+  font-size: clamp(26px, 6vw, 56px); line-height: 1.02; text-shadow: 0 4px 24px rgba(0,0,0,.6);
+}
+.promo-head b { color: #FEF200; }
+.promo-fine { grid-area: fine; margin: 0; font-size: 12px; color: rgba(255,255,255,.65); max-width: 420px; }
+
+/* Wheel */
+.promo-wheel-wrap { grid-area: wheel; position: relative; width: min(92vw, 58vh, 640px); aspect-ratio: 1; }
+@media (min-width: 768px) and (orientation: landscape) { .promo-wheel-wrap { width: min(44vw, 78vh, 640px); } }
+.promo-wheel {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 10px solid #FEF200;
+  box-shadow: 0 0 0 6px #1A1E2E, 0 0 60px rgba(254,242,0,.45), inset 0 0 40px rgba(0,0,0,.5);
+  will-change: transform;
+}
+/* Each label: a full-size wrapper rotated to the slice bisector, with the
+   text pushed outward along the wrapper's +x axis from the centre. */
+.promo-label-arm {
+  position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+}
+.promo-label {
+  position: absolute; left: 0; top: 0;
+  transform: translate(calc(var(--wheel, 320px) * 0.16), -50%);
+  font-weight: 900; text-transform: uppercase; white-space: nowrap;
+  font-size: calc(var(--wheel, 320px) * 0.040); letter-spacing: .02em;
+  text-shadow: 0 1px 0 rgba(0,0,0,.15);
+}
+/* Left-half labels: rotate 180° about the arm origin and anchor the text's
+   right edge at the same radius so it reads inward-to-outward, upright. */
+.promo-label--flip {
+  transform: rotate(180deg) translate(calc(var(--wheel, 320px) * -0.16), 50%);
+}
+.promo-hub {
+  position: absolute; left: 50%; top: 50%; width: 17%; aspect-ratio: 1; transform: translate(-50%, -50%);
+  border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff8a8, #FEF200 45%, #c9a800);
+  box-shadow: 0 0 0 5px #1A1E2E, 0 6px 18px rgba(0,0,0,.6); display: grid; place-items: center;
+  font-weight: 900; color: #1A1E2E; font-size: calc(var(--wheel, 320px) * 0.045);
+}
+.promo-pointer {
+  position: absolute; left: 50%; top: -3%; transform: translateX(-50%);
+  width: 0; height: 0; border-left: 18px solid transparent; border-right: 18px solid transparent;
+  border-top: 44px solid #C50E1F; filter: drop-shadow(0 4px 6px rgba(0,0,0,.6)); z-index: 2;
+}
+.promo-pointer::after {
+  content: ""; position: absolute; left: -10px; top: -50px; width: 20px; height: 20px; border-radius: 50%; background: #C50E1F;
+}
+
+/* CTA */
+.promo-cta { grid-area: cta; }
+.promo-spin-btn {
+  appearance: none; border: 0; cursor: pointer; border-radius: 999px;
+  padding: 18px 56px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em;
+  font-size: clamp(18px, 4.5vw, 26px); color: #1A1E2E;
+  font-family: inherit;
+  background: linear-gradient(135deg, #FEF200, #f0b400);
+  box-shadow: 0 8px 30px rgba(254,242,0,.45), inset 0 -4px 0 rgba(0,0,0,.15);
+  animation: promoPulse 1.6s ease-in-out infinite;
+}
+.promo-spin-btn:disabled { animation: none; opacity: .6; cursor: default; }
+@keyframes promoPulse { 0%,100% { transform: scale(1);} 50% { transform: scale(1.05);} }
+
+/* Popup */
+.promo-scrim {
+  position: fixed; inset: 0; background: rgba(4,2,12,.82); display: grid; place-items: center; z-index: 10;
+  animation: promoFade .35s ease-out both;
+}
+@keyframes promoFade { from { opacity: 0 } to { opacity: 1 } }
+.promo-modal {
+  width: min(92vw, 520px); padding: 36px 28px 30px; border-radius: 24px; text-align: center;
+  background: linear-gradient(180deg, #1f1340, #0e0a22);
+  border: 2px solid rgba(254,242,0,.55); box-shadow: 0 0 80px rgba(254,242,0,.25), 0 30px 80px rgba(0,0,0,.7);
+  animation: promoZoom .5s cubic-bezier(.34,1.56,.64,1) both; position: relative; overflow: hidden;
+}
+@keyframes promoZoom { from { transform: scale(.7); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+.promo-modal h2 { font-size: clamp(28px, 7vw, 44px); font-weight: 900; color: #FEF200; margin: 0 0 8px; text-transform: uppercase; position: relative; }
+.promo-modal p.win { font-size: clamp(18px, 4.6vw, 26px); margin: 0 0 22px; position: relative; }
+.promo-modal p.win b { color: #FEF200; }
+.promo-claim {
+  position: relative; display: block; text-decoration: none; color: #1A1E2E; border-radius: 999px; padding: 20px 24px;
+  font-weight: 900; text-transform: uppercase; letter-spacing: .06em; font-size: clamp(18px, 5vw, 26px);
+  background: linear-gradient(135deg, #FEF200, #f0b400); box-shadow: 0 10px 36px rgba(254,242,0,.5);
+  animation: promoPulse 1.2s ease-in-out infinite;
+}
+.promo-sub { position: relative; margin: 14px 0 0; font-size: 14px; color: rgba(255,255,255,.75); }
+.promo-later {
+  position: relative; display: inline-block; margin-top: 14px; font-size: 13px; color: rgba(255,255,255,.5);
+  text-decoration: underline; background: none; border: 0; cursor: pointer; font-family: inherit;
+}
+
+/* Confetti: absolutely positioned pieces with randomised CSS vars */
+.promo-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.promo-confetti i {
+  position: absolute; top: -16px; left: var(--x); width: 10px; height: 16px; background: var(--c);
+  transform: rotate(var(--r)); animation: promoDrop var(--d) linear var(--delay) infinite;
+}
+@keyframes promoDrop { to { transform: translateY(120vh) rotate(calc(var(--r) + 540deg)); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .promo-spin-btn, .promo-claim, .promo-confetti i { animation: none; }
+}
