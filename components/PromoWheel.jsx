@@ -391,18 +391,8 @@ export default function PromoWheel({ site }) {
               <circle cx="150" cy="150" r="148" fill="url(#pwInnerGlow)" />
               <circle cx="150" cy="150" r="148" fill="url(#pwRimDarken)" />
 
-              {/* ARC PATHS for prize text (baseline faces center) */}
-              {PROMO_SEGMENTS.map((seg, i) => {
-                if (seg.isLoss || seg.marquee) return null;
-                const r = 118;
-                const startDeg = i * SEGMENT_DEG - 90;
-                const endDeg = startDeg + SEGMENT_DEG;
-                const s = { x: 150 + r * Math.cos(startDeg * Math.PI / 180), y: 150 + r * Math.sin(startDeg * Math.PI / 180) };
-                const e = { x: 150 + r * Math.cos(endDeg * Math.PI / 180), y: 150 + r * Math.sin(endDeg * Math.PI / 180) };
-                return <path key={`arc${i}`} id={`pwSegArc${i}`} d={`M ${s.x} ${s.y} A ${r} ${r} 0 0 1 ${e.x} ${e.y}`} fill="none" />;
-              })}
-
-              {/* TEXT LABELS */}
+              {/* TEXT LABELS — every label reads along the radius (vertical
+                  spokes), prizes included */}
               {PROMO_SEGMENTS.map((seg, i) => {
                 const midAngle = i * SEGMENT_DEG - 90 + SEGMENT_DEG / 2;
                 if (seg.marquee) {
@@ -435,12 +425,13 @@ export default function PromoWheel({ site }) {
                   );
                 }
                 return (
-                  <text key={`t${i}`} fill="white" fontSize="17" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
-                    stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="1">
-                    <textPath href={`#pwSegArc${i}`} startOffset="50%" textAnchor="middle">
+                  <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
+                    <text x={150 + 100} y={150} textAnchor="middle" dominantBaseline="central"
+                      fill="white" fontSize="19" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                      stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="1">
                       {seg.label}
-                    </textPath>
-                  </text>
+                    </text>
+                  </g>
                 );
               })}
             </svg>
