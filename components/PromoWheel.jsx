@@ -54,7 +54,7 @@ function Confetti() {
 }
 
 export default function PromoWheel({ site }) {
-  // idle → spinning → result → done (existing-audience "maybe later")
+  // idle → spinning → result (which then auto-redirects to BwanaBet)
   const [screen, setScreen] = useState('idle');
   const [isMobile, setIsMobile] = useState(true);
   const wheelRef = useRef(null);
@@ -97,25 +97,18 @@ export default function PromoWheel({ site }) {
 
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
-  // Auto-redirect: the win card counts down, then takes the visitor to
-  // BwanaBet itself — where embed.js sees the wof marker on the destination
-  // URL and greets them with the arrival popup. "Maybe later" (existing
-  // audience) changes screen and cancels via the effect cleanup.
-  const REDIRECT_SECONDS = 8;
-  const [redirectIn, setRedirectIn] = useState(null);
+  // Silent auto-redirect (owner spec: no countdown text, no opt-out): the win
+  // card holds for a beat, then the page moves on to BwanaBet by itself —
+  // where embed.js sees the wof marker on the destination URL and greets the
+  // visitor with the arrival popup.
+  const REDIRECT_MS = 3000;
   useEffect(() => {
-    if (screen !== 'result') { setRedirectIn(null); return undefined; }
-    setRedirectIn(REDIRECT_SECONDS);
-    const id = setInterval(() => {
-      setRedirectIn((s) => {
-        if (s === null || s > 1) return s === null ? null : s - 1;
-        clearInterval(id);
-        if (!isTestMode) sendEvent('auto_redirect', site.variant);
-        window.location.assign(site.destination);
-        return 0;
-      });
-    }, 1000);
-    return () => clearInterval(id);
+    if (screen !== 'result') return undefined;
+    const id = setTimeout(() => {
+      if (!isTestMode) sendEvent('auto_redirect', site.variant);
+      window.location.assign(site.destination);
+    }, REDIRECT_MS);
+    return () => clearTimeout(id);
   }, [screen, site.destination, site.variant, isTestMode]);
 
   const spin = useCallback(() => {
@@ -562,14 +555,6 @@ export default function PromoWheel({ site }) {
               {site.ctaText}
             </a>
             <p className="promo-sub">{site.subText}</p>
-            {redirectIn !== null && redirectIn > 0 && (
-              <p className="promo-redirect" aria-live="polite">
-                Taking you to BwanaBet in {redirectIn}s…
-              </p>
-            )}
-            {site.variant === 'existing' && (
-              <button type="button" className="promo-later" onClick={() => setScreen('done')}>Maybe later</button>
-            )}
           </div>
         </div>
       )}
