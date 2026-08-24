@@ -77,6 +77,10 @@ const ALLOWED_AUTH_ORIGINS = new Set([
   // TEMPORARY (2026-07-21): BwanaBet dev environment for pre-launch widget
   // testing. Remove once the team confirms testing is done.
   'https://dev-bwanabet.energaming.services',
+  // TEMPORARY (2026-08-24): BwanaBet staging environment, requested by their
+  // dev team for wheel + subscribe-icon placement testing. Remove with the
+  // dev entry above once testing wraps.
+  'https://staging-bwanabet.energaming.services',
 ]);
 
 function isAllowedAuthOrigin(origin) {
