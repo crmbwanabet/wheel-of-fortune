@@ -70,6 +70,15 @@ export default function PromoWheel({ site }) {
     return cores <= 4 || mem <= 3;
   });
 
+  // Test mode, like the money wheel's: ?test=1 ignores the one-spin-per-visitor
+  // memory (fresh spin every reload) and sends no funnel events, so design
+  // reviews and demos neither get stuck on the claim screen nor inflate the
+  // stats. Never affects the initial markup, so hydration stays clean.
+  const [isTestMode] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('test') === '1';
+  });
+
   // Which background to show.
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ);
@@ -81,17 +90,20 @@ export default function PromoWheel({ site }) {
 
   // Returning visitor: they already won — go straight to the claim.
   useEffect(() => {
+    if (isTestMode) return;
     sendEvent('view', site.variant);
     if (readPromoSpun(window.localStorage, site.variant)) setScreen('result');
-  }, [site.variant]);
+  }, [site.variant, isTestMode]);
 
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
   const spin = useCallback(() => {
     if (screen !== 'idle') return;
     setScreen('spinning');
-    writePromoSpun(window.localStorage, new Date().toISOString(), site.variant);
-    sendEvent('spin', site.variant);
+    if (!isTestMode) {
+      writePromoSpun(window.localStorage, new Date().toISOString(), site.variant);
+      sendEvent('spin', site.variant);
+    }
     const target = landingAngle();
     const start = performance.now();
 
@@ -152,7 +164,7 @@ export default function PromoWheel({ site }) {
       rafRef.current = requestAnimationFrame(settle);
     };
     rafRef.current = requestAnimationFrame(frame);
-  }, [screen, site.variant]);
+  }, [screen, site.variant, isTestMode]);
 
   const bg = isMobile ? site.background.mobile : site.background.desktop;
   const isSpinning = screen === 'spinning';
@@ -515,7 +527,7 @@ export default function PromoWheel({ site }) {
             <Confetti />
             <h2 id="promo-congrats">🎉 Congratulations!</h2>
             <p className="win">You&apos;ve won <b>50 Aviator Free Spins</b></p>
-            <a className="promo-claim" href={site.destination} onClick={() => sendEvent('claim_click', site.variant)}>
+            <a className="promo-claim" href={site.destination} onClick={() => { if (!isTestMode) sendEvent('claim_click', site.variant); }}>
               {site.ctaText}
             </a>
             <p className="promo-sub">{site.subText}</p>
