@@ -397,17 +397,21 @@ export default function PromoWheel({ site }) {
                 const midAngle = i * SEGMENT_DEG - 90 + SEGMENT_DEG / 2;
                 if (seg.marquee) {
                   // Marquee label like the money wheel's jackpot: amount in
-                  // gold, the word beneath in white.
+                  // gold, the word beneath in white. textLength stretches both
+                  // lines across the slice's radial band so the star prize
+                  // fills its slot like the cash prizes do.
                   return (
                     <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
-                      <text x={150 + 102} y={150 - 8} textAnchor="middle" dominantBaseline="central"
-                        fill="#ffd700" fontSize="14" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
-                        stroke="rgba(0,0,0,0.75)" strokeWidth="3" paintOrder="stroke" letterSpacing="0.5">
+                      <text x={150 + 100} y={150 - 10} textAnchor="middle" dominantBaseline="central"
+                        fill="#ffd700" fontSize="20" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                        stroke="rgba(0,0,0,0.75)" strokeWidth="3" paintOrder="stroke" letterSpacing="0.5"
+                        textLength="84" lengthAdjust="spacing">
                         50 FREE
                       </text>
-                      <text x={150 + 102} y={150 + 8} textAnchor="middle" dominantBaseline="central"
-                        fill="#fff" fontSize="10" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
-                        stroke="rgba(0,0,0,0.75)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="2">
+                      <text x={150 + 100} y={150 + 10} textAnchor="middle" dominantBaseline="central"
+                        fill="#fff" fontSize="15" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                        stroke="rgba(0,0,0,0.75)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="2"
+                        textLength="84" lengthAdjust="spacing">
                         SPINS
                       </text>
                     </g>
@@ -417,18 +421,22 @@ export default function PromoWheel({ site }) {
                   return (
                     <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
                       <text x={150 + 100} y={150} textAnchor="middle" dominantBaseline="central"
-                        fill="white" fontSize="13" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
-                        stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="0.3">
+                        fill="white" fontSize="16" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                        stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="2">
                         LOSE
                       </text>
                     </g>
                   );
                 }
+                // Prize amounts fill the slice: sized to the radial band from
+                // the hub's edge to the rim, textLength evening out the short
+                // labels so K20 spans the same band as K100.
                 return (
                   <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
                     <text x={150 + 100} y={150} textAnchor="middle" dominantBaseline="central"
-                      fill="white" fontSize="19" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
-                      stroke="rgba(0,0,0,0.6)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="1">
+                      fill="white" fontSize="34" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                      stroke="rgba(0,0,0,0.6)" strokeWidth="3" paintOrder="stroke" letterSpacing="1"
+                      textLength="86" lengthAdjust="spacing">
                       {seg.label}
                     </text>
                   </g>
