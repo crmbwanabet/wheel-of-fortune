@@ -13,11 +13,12 @@ const WHEEL_GRADIENT = `conic-gradient(from 0deg, ${PROMO_SEGMENTS
 const CONFETTI_COLORS = ['#FEF200', '#C50E1F', '#ffffff', '#F5B301', '#3ddc84'];
 const MOBILE_MQ = '(max-width: 767px), (orientation: portrait)';
 
-// Funnel beacon. Host is taken from the request server-side; the body only
-// carries the event name and the layout that was showing.
-function sendEvent(event) {
+// Funnel beacon. The body names the variant so events from the shared-host
+// path links (/spin, /bonus) still attribute to the right site; on a real
+// promo domain the server trusts the Host header instead.
+function sendEvent(event, variant) {
   try {
-    const body = JSON.stringify({ event, isMobile: window.matchMedia(MOBILE_MQ).matches });
+    const body = JSON.stringify({ event, variant, isMobile: window.matchMedia(MOBILE_MQ).matches });
     if (navigator.sendBeacon) {
       navigator.sendBeacon('/api/promo-event', new Blob([body], { type: 'application/json' }));
     } else {
@@ -73,17 +74,17 @@ export default function PromoWheel({ site }) {
 
   // Returning visitor: they already won — go straight to the claim.
   useEffect(() => {
-    sendEvent('view');
-    if (readPromoSpun(window.localStorage)) setScreen('result');
-  }, []);
+    sendEvent('view', site.variant);
+    if (readPromoSpun(window.localStorage, site.variant)) setScreen('result');
+  }, [site.variant]);
 
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
   const spin = useCallback(() => {
     if (screen !== 'idle') return;
     setScreen('spinning');
-    writePromoSpun(window.localStorage, new Date().toISOString());
-    sendEvent('spin');
+    writePromoSpun(window.localStorage, new Date().toISOString(), site.variant);
+    sendEvent('spin', site.variant);
     const target = landingAngle();
     const start = performance.now();
     const frame = (now) => {
@@ -106,7 +107,7 @@ export default function PromoWheel({ site }) {
     <main className="promo-root" style={{ backgroundImage: `url(${bg})` }}>
       <div className="promo-layout">
         <h1 className="promo-head">
-          {site.audience === 'new'
+          {site.variant === 'new'
             ? <>Spin to win <b>50 Aviator Free Spins</b></>
             : <>Your <b>50 Aviator Free Spins</b> are waiting</>}
         </h1>
@@ -145,11 +146,11 @@ export default function PromoWheel({ site }) {
             <Confetti />
             <h2 id="promo-congrats">🎉 Congratulations!</h2>
             <p className="win">You&apos;ve won <b>50 Aviator Free Spins</b></p>
-            <a className="promo-claim" href={site.destination} onClick={() => sendEvent('claim_click')}>
+            <a className="promo-claim" href={site.destination} onClick={() => sendEvent('claim_click', site.variant)}>
               {site.ctaText}
             </a>
             <p className="promo-sub">{site.subText}</p>
-            {site.audience === 'existing' && (
+            {site.variant === 'existing' && (
               <button type="button" className="promo-later" onClick={() => setScreen('done')}>Maybe later</button>
             )}
           </div>
