@@ -109,10 +109,6 @@
   animation: promoPulse 1.2s ease-in-out infinite;
 }
 .promo-sub { position: relative; margin: 13px 0 0; font-size: 13px; color: rgba(255,255,255,.7); }
-.promo-later {
-  position: relative; display: inline-block; margin-top: 14px; font-size: 13px; color: rgba(255,255,255,.5);
-  text-decoration: underline; background: none; border: 0; cursor: pointer; font-family: inherit;
-}
 
 /* Confetti: absolutely positioned pieces with randomised CSS vars */
 .promo-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
