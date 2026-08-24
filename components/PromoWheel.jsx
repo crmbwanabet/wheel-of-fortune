@@ -549,7 +549,7 @@ export default function PromoWheel({ site }) {
             <p className="promo-what" aria-hidden="true">Free Spins</p>
             <p className="promo-on">
               <span className="sr-only">You&apos;ve won 50 free spins </span>
-              on <b>Aviator</b>{site.variant === 'new' ? ' — added the moment you register' : ' — already in your account'}
+              on <b>Aviator</b>{site.variant === 'new' ? ', added when you register' : ', already in your account'}
             </p>
             <a className="promo-claim" href={site.destination} onClick={() => { if (!isTestMode) sendEvent('claim_click', site.variant); }}>
               {site.ctaText}

@@ -1,5 +1,5 @@
 export const metadata = {
-  title: 'Spin & Win 50 Aviator Free Spins — BwanaBet',
+  title: 'Spin & Win 50 Aviator Free Spins | BwanaBet',
   description: 'Spin the wheel for free and claim 50 Aviator free spins on BwanaBet.',
 };
 
