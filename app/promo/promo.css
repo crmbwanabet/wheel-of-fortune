@@ -34,7 +34,12 @@
    PromoWheel.jsx as a copy of the money wheel's SVG construction — this file
    only sizes the square it lives in. */
 .promo-wheel-wrap { grid-area: wheel; position: relative; width: min(92vw, 58vh, 640px); aspect-ratio: 1; }
-@media (min-width: 768px) and (orientation: landscape) { .promo-wheel-wrap { width: min(44vw, 78vh, 640px); } }
+/* Desktop: the artwork (plane, coin trail, chicken) lives on the LEFT edge of
+   the background, so the wheel shrinks a step and hugs the centre line to
+   leave that edge visible instead of sitting on top of it. */
+@media (min-width: 768px) and (orientation: landscape) {
+  .promo-wheel-wrap { width: min(34vw, 64vh, 520px); justify-self: end; margin-right: 28px; }
+}
 
 /* CTA */
 .promo-cta { grid-area: cta; }
