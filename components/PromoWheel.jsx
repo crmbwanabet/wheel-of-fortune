@@ -402,16 +402,16 @@ export default function PromoWheel({ site }) {
                   // fills its slot like the cash prizes do.
                   return (
                     <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
-                      <text x={150 + 100} y={150 - 10} textAnchor="middle" dominantBaseline="central"
-                        fill="#ffd700" fontSize="20" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                      <text x={150 + 100} y={150 - 9} textAnchor="middle" dominantBaseline="central"
+                        fill="#ffd700" fontSize="17" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
                         stroke="rgba(0,0,0,0.75)" strokeWidth="3" paintOrder="stroke" letterSpacing="0.5"
-                        textLength="84" lengthAdjust="spacing">
+                        textLength="72" lengthAdjust="spacing">
                         50 FREE
                       </text>
-                      <text x={150 + 100} y={150 + 10} textAnchor="middle" dominantBaseline="central"
-                        fill="#fff" fontSize="15" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                      <text x={150 + 100} y={150 + 9} textAnchor="middle" dominantBaseline="central"
+                        fill="#fff" fontSize="13" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
                         stroke="rgba(0,0,0,0.75)" strokeWidth="2.5" paintOrder="stroke" letterSpacing="2"
-                        textLength="84" lengthAdjust="spacing">
+                        textLength="72" lengthAdjust="spacing">
                         SPINS
                       </text>
                     </g>
@@ -434,9 +434,9 @@ export default function PromoWheel({ site }) {
                 return (
                   <g key={`t${i}`} transform={`rotate(${midAngle}, 150, 150)`}>
                     <text x={150 + 100} y={150} textAnchor="middle" dominantBaseline="central"
-                      fill="white" fontSize="34" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
+                      fill="white" fontSize="28" fontWeight="900" fontFamily="var(--font-brand), 'Arial Narrow', Arial, sans-serif"
                       stroke="rgba(0,0,0,0.6)" strokeWidth="3" paintOrder="stroke" letterSpacing="1"
-                      textLength="86" lengthAdjust="spacing">
+                      textLength="74" lengthAdjust="spacing">
                       {seg.label}
                     </text>
                   </g>
