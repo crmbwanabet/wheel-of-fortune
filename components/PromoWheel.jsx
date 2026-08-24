@@ -54,7 +54,7 @@ function Confetti() {
 }
 
 export default function PromoWheel({ site }) {
-  // idle → spinning → result (which then auto-redirects to BwanaBet)
+  // idle → spinning → result → done (existing-audience "maybe later")
   const [screen, setScreen] = useState('idle');
   const [isMobile, setIsMobile] = useState(true);
   const wheelRef = useRef(null);
@@ -96,20 +96,6 @@ export default function PromoWheel({ site }) {
   }, [site.variant, isTestMode]);
 
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
-
-  // Silent auto-redirect (owner spec: no countdown text, no opt-out): the win
-  // card holds for a beat, then the page moves on to BwanaBet by itself —
-  // where embed.js sees the wof marker on the destination URL and greets the
-  // visitor with the arrival popup.
-  const REDIRECT_MS = 3000;
-  useEffect(() => {
-    if (screen !== 'result') return undefined;
-    const id = setTimeout(() => {
-      if (!isTestMode) sendEvent('auto_redirect', site.variant);
-      window.location.assign(site.destination);
-    }, REDIRECT_MS);
-    return () => clearTimeout(id);
-  }, [screen, site.destination, site.variant, isTestMode]);
 
   const spin = useCallback(() => {
     if (screen !== 'idle') return;
@@ -555,6 +541,9 @@ export default function PromoWheel({ site }) {
               {site.ctaText}
             </a>
             <p className="promo-sub">{site.subText}</p>
+            {site.variant === 'existing' && (
+              <button type="button" className="promo-later" onClick={() => setScreen('done')}>Maybe later</button>
+            )}
           </div>
         </div>
       )}
