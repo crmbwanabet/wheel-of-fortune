@@ -30,46 +30,11 @@
 .promo-head b { color: #FEF200; }
 .promo-fine { grid-area: fine; margin: 0; font-size: 12px; color: rgba(255,255,255,.65); max-width: 420px; }
 
-/* Wheel */
+/* Wheel. The wheel itself (chrome frame, slices, pointer, hub) is built in
+   PromoWheel.jsx as a copy of the money wheel's SVG construction — this file
+   only sizes the square it lives in. */
 .promo-wheel-wrap { grid-area: wheel; position: relative; width: min(92vw, 58vh, 640px); aspect-ratio: 1; }
 @media (min-width: 768px) and (orientation: landscape) { .promo-wheel-wrap { width: min(44vw, 78vh, 640px); } }
-.promo-wheel {
-  position: absolute; inset: 0; border-radius: 50%;
-  border: 10px solid #FEF200;
-  box-shadow: 0 0 0 6px #1A1E2E, 0 0 60px rgba(254,242,0,.45), inset 0 0 40px rgba(0,0,0,.5);
-  will-change: transform;
-}
-/* Each label: a full-size wrapper rotated to the slice bisector, with the
-   text pushed outward along the wrapper's +x axis from the centre. */
-.promo-label-arm {
-  position: absolute; left: 50%; top: 50%; width: 0; height: 0;
-}
-.promo-label {
-  position: absolute; left: 0; top: 0;
-  transform: translate(calc(var(--wheel, 320px) * 0.16), -50%);
-  font-weight: 900; text-transform: uppercase; white-space: nowrap;
-  font-size: calc(var(--wheel, 320px) * 0.040); letter-spacing: .02em;
-  text-shadow: 0 1px 0 rgba(0,0,0,.15);
-}
-/* Left-half labels: rotate 180° about the arm origin and anchor the text's
-   right edge at the same radius so it reads inward-to-outward, upright. */
-.promo-label--flip {
-  transform: rotate(180deg) translate(calc(var(--wheel, 320px) * -0.16), 50%);
-}
-.promo-hub {
-  position: absolute; left: 50%; top: 50%; width: 17%; aspect-ratio: 1; transform: translate(-50%, -50%);
-  border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff8a8, #FEF200 45%, #c9a800);
-  box-shadow: 0 0 0 5px #1A1E2E, 0 6px 18px rgba(0,0,0,.6); display: grid; place-items: center;
-  font-weight: 900; color: #1A1E2E; font-size: calc(var(--wheel, 320px) * 0.045);
-}
-.promo-pointer {
-  position: absolute; left: 50%; top: -3%; transform: translateX(-50%);
-  width: 0; height: 0; border-left: 18px solid transparent; border-right: 18px solid transparent;
-  border-top: 44px solid #C50E1F; filter: drop-shadow(0 4px 6px rgba(0,0,0,.6)); z-index: 2;
-}
-.promo-pointer::after {
-  content: ""; position: absolute; left: -10px; top: -50px; width: 20px; height: 20px; border-radius: 50%; background: #C50E1F;
-}
 
 /* CTA */
 .promo-cta { grid-area: cta; }
@@ -86,8 +51,9 @@
 @keyframes promoPulse { 0%,100% { transform: scale(1);} 50% { transform: scale(1.05);} }
 
 /* Popup */
+/* z-index clears the wheel's own stack (frame z-20, pointer z-30). */
 .promo-scrim {
-  position: fixed; inset: 0; background: rgba(4,2,12,.82); display: grid; place-items: center; z-index: 10;
+  position: fixed; inset: 0; background: rgba(4,2,12,.82); display: grid; place-items: center; z-index: 100;
   animation: promoFade .35s ease-out both;
 }
 @keyframes promoFade { from { opacity: 0 } to { opacity: 1 } }
