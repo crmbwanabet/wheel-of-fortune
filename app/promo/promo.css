@@ -109,6 +109,10 @@
   animation: promoPulse 1.2s ease-in-out infinite;
 }
 .promo-sub { position: relative; margin: 13px 0 0; font-size: 13px; color: rgba(255,255,255,.7); }
+.promo-redirect {
+  position: relative; margin: 10px 0 0; font-size: 13px; font-weight: 700;
+  color: #FEF200; letter-spacing: .04em; font-variant-numeric: tabular-nums;
+}
 .promo-later {
   position: relative; display: inline-block; margin-top: 14px; font-size: 13px; color: rgba(255,255,255,.5);
   text-decoration: underline; background: none; border: 0; cursor: pointer; font-family: inherit;

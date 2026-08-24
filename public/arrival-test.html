@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arrival popup test — stand-in for bwanabet.com</title>
+<style>
+  body { margin: 0; min-height: 100vh; background: #101623; color: #cfd6e4;
+    font-family: "Roboto Condensed", Arial, sans-serif; display: grid; place-items: center; text-align: center; }
+  main { max-width: 560px; padding: 40px 24px; }
+  h1 { color: #FEF200; font-size: 26px; margin: 0 0 10px; }
+  p { line-height: 1.55; }
+  a.mode { display: inline-block; margin: 8px 6px 0; padding: 12px 22px; border-radius: 10px;
+    background: #FEF200; color: #101623; font-weight: 700; text-decoration: none; }
+  code { background: #1c2436; padding: 2px 6px; border-radius: 5px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Arrival popup test page</h1>
+  <p>This page stands in for bwanabet.com — it loads the same <code>embed.js</code> the real site does.
+     Open it with a <code>?wof=…</code> marker to see the popup a promo-site visitor gets on arrival:</p>
+  <p>
+    <a class="mode" href="?wof=new">New player (register)</a>
+    <a class="mode" href="?wof=existing">Existing player (log in)</a>
+  </p>
+  <p>The popup shows once per browser session — reopen from these buttons to see it again
+     (each click is a fresh URL, but you may need a new tab/incognito after dismissing).
+     The popup's own button navigates to the real bwanabet.com auth pages.</p>
+</main>
+<script>
+  // The popup shows once per session; on this harness always clear the latch
+  // so every visit demonstrates it.
+  try { sessionStorage.removeItem('bwanabet_wof_arrival_shown'); } catch (e) {}
+</script>
+<script src="/embed.js"></script>
+</body>
+</html>

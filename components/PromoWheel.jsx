@@ -97,6 +97,27 @@ export default function PromoWheel({ site }) {
 
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
+  // Auto-redirect: the win card counts down, then takes the visitor to
+  // BwanaBet itself — where embed.js sees the wof marker on the destination
+  // URL and greets them with the arrival popup. "Maybe later" (existing
+  // audience) changes screen and cancels via the effect cleanup.
+  const REDIRECT_SECONDS = 8;
+  const [redirectIn, setRedirectIn] = useState(null);
+  useEffect(() => {
+    if (screen !== 'result') { setRedirectIn(null); return undefined; }
+    setRedirectIn(REDIRECT_SECONDS);
+    const id = setInterval(() => {
+      setRedirectIn((s) => {
+        if (s === null || s > 1) return s === null ? null : s - 1;
+        clearInterval(id);
+        if (!isTestMode) sendEvent('auto_redirect', site.variant);
+        window.location.assign(site.destination);
+        return 0;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [screen, site.destination, site.variant, isTestMode]);
+
   const spin = useCallback(() => {
     if (screen !== 'idle') return;
     setScreen('spinning');
@@ -541,6 +562,11 @@ export default function PromoWheel({ site }) {
               {site.ctaText}
             </a>
             <p className="promo-sub">{site.subText}</p>
+            {redirectIn !== null && redirectIn > 0 && (
+              <p className="promo-redirect" aria-live="polite">
+                Taking you to BwanaBet in {redirectIn}s…
+              </p>
+            )}
             {site.variant === 'existing' && (
               <button type="button" className="promo-later" onClick={() => setScreen('done')}>Maybe later</button>
             )}
