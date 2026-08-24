@@ -821,8 +821,8 @@
       try { if (sessionStorage.getItem(ARRIVAL_KEY)) return; } catch (e) { /* storage blocked: still show once */ }
 
       var isNew = aud === 'new';
-      var targetPath = isNew ? '/en/auth/signup' : '/en/auth/login';
-      var targetUrl = arrivalBase() + (isNew ? '/en/auth/signup?ref_id=A252' : '/en/auth/login');
+      var targetPath = isNew ? '/en/auth/signup' : '/en/auth/signin';
+      var targetUrl = arrivalBase() + (isNew ? '/en/auth/signup?ref_id=A252' : '/en/auth/signin');
       var onTargetPage = location.pathname.indexOf(targetPath) === 0;
       var line = isNew ? 'Register now to get 50 free spins!' : 'Log in to get 50 free spins!';
       var btnText = isNew ? 'Register now!' : 'Log in now!';
