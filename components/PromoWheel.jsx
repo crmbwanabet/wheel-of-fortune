@@ -523,10 +523,20 @@ export default function PromoWheel({ site }) {
 
       {screen === 'result' && (
         <div className="promo-scrim" role="dialog" aria-modal="true" aria-labelledby="promo-congrats">
+          {/* "Sunburst Lights" card (owner-picked): slow-turning gold rays and
+              a blinking bulb frame around the red marquee, with the metallic
+              gold 50 and spaced white FREE SPINS lettering. */}
           <div className="promo-modal">
+            <div className="promo-rays" aria-hidden="true" />
+            <div className="promo-bulbs" aria-hidden="true" />
             <Confetti />
-            <h2 id="promo-congrats">🎉 Congratulations!</h2>
-            <p className="win">You&apos;ve won <b>50 Aviator Free Spins</b></p>
+            <h2 className="promo-winner" id="promo-congrats">Winner</h2>
+            <p className="promo-fifty" aria-hidden="true">50</p>
+            <p className="promo-what" aria-hidden="true">Free Spins</p>
+            <p className="promo-on">
+              <span className="sr-only">You&apos;ve won 50 free spins </span>
+              on <b>Aviator</b>{site.variant === 'new' ? ' — added the moment you register' : ' — already in your account'}
+            </p>
             <a className="promo-claim" href={site.destination} onClick={() => { if (!isTestMode) sendEvent('claim_click', site.variant); }}>
               {site.ctaText}
             </a>
