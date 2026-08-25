@@ -334,7 +334,7 @@ function WinnerTicker({ isLowEnd }) {
             ? '0 0 10px rgba(255,95,95,0.55)'
             : '0 0 8px rgba(255,255,255,0.35)',
         }}>
-          {winner.name.toUpperCase()} {winner.surname.toUpperCase()} FROM {winner.town.toUpperCase()} WON{winner.jackpot ? ' THE JACKPOT OF' : ''}{' '}
+          {winner.name.toUpperCase()}.{winner.surname.charAt(0).toUpperCase()} FROM {winner.town.toUpperCase()} WON{winner.jackpot ? ' THE JACKPOT OF' : ''}{' '}
           <span style={{ color: '#ffd24a' }}>
             K{winner.prize.toLocaleString('en-US')}
           </span>!
