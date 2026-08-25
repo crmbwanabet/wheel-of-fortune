@@ -327,13 +327,13 @@ function WinnerTicker({ isLowEnd }) {
           textAlign: 'center',
           letterSpacing: '0.08em',
           fontVariantNumeric: 'tabular-nums',
-          color: winner.jackpot ? '#ff5f5f' : '#ffd24a',
+          color: winner.jackpot ? '#ff5f5f' : '#fff',
           textShadow: winner.jackpot
             ? '0 0 10px rgba(255,95,95,0.55)'
-            : '0 0 8px rgba(255,210,74,0.4)',
+            : '0 0 8px rgba(255,255,255,0.35)',
         }}>
           {winner.name.toUpperCase()} {winner.surname.toUpperCase()} FROM {winner.town.toUpperCase()} WON{winner.jackpot ? ' THE JACKPOT OF' : ''}{' '}
-          <span style={{ color: winner.jackpot ? '#ffd24a' : '#fff' }}>
+          <span style={{ color: '#ffd24a' }}>
             K{winner.prize.toLocaleString('en-US')}
           </span>!
         </FitText>
@@ -1385,6 +1385,9 @@ export default function WheelWidget({ prefillUserId = null }) {
         {/* === CONTENT === */}
         <div className="relative z-10 px-4 sm:px-5 pt-4 pb-4">
 
+          {/* Winner readerboard — simulated social proof, rules in lib/winnerTicker.js */}
+          <WinnerTicker isLowEnd={isLowEnd} />
+
           {/* Header */}
           <div className="text-center mb-2">
             {/* BWANA_YELLOW, sampled from the logo PNG on the live site — the
@@ -1404,9 +1407,6 @@ export default function WheelWidget({ prefillUserId = null }) {
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
             }}><FitText max={44} fill={0.98}>SPIN AND WIN</FitText></h1>
           </div>
-
-          {/* Winner readerboard — simulated social proof, rules in lib/winnerTicker.js */}
-          <WinnerTicker isLowEnd={isLowEnd} />
 
           {/* ============ WHEEL AREA ============ */}
           <div className="relative mx-auto" style={{ width: '100%', maxWidth: WHEEL_SIZE + 50, aspectRatio: '1' }}>
