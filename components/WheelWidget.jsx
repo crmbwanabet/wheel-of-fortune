@@ -315,7 +315,9 @@ function WinnerTicker({ isLowEnd }) {
   };
   return (
     <div aria-hidden="true" style={{
-      position: 'relative', margin: '0 0 10px', padding: '11px 10px 10px',
+      // marginTop clears the close button, which floats at top:12px and is
+      // 36px tall — the board's top edge starts at its bottom edge.
+      position: 'relative', margin: '32px 0 10px', padding: '11px 10px 10px',
       background: '#0d0f17', border: '1px solid #333a4d', borderRadius: 8,
       boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.55)', overflow: 'hidden',
     }}>
@@ -1398,14 +1400,14 @@ export default function WheelWidget({ prefillUserId = null }) {
               letterSpacing: '-0.02em',
               color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}><FitText max={46} fill={0.98}>BWANABET</FitText></h1>
+            }}><FitText max={30} fill={0.98}>BWANABET</FitText></h1>
             {/* Same brand yellow as BWANABET above it — the marquee reads as one
                 unit rather than two different yellows stacked. */}
             <h1 className="font-black leading-[0.92] mt-0.5" style={{
               letterSpacing: '-0.02em',
               color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}><FitText max={44} fill={0.98}>SPIN AND WIN</FitText></h1>
+            }}><FitText max={26} fill={0.98}>SPIN AND WIN</FitText></h1>
           </div>
 
           {/* ============ WHEEL AREA ============ */}
