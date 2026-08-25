@@ -7,7 +7,7 @@ import { resolvePromoSite, getPromoVariant } from '@/lib/promoConfig';
 
 export const dynamic = 'force-dynamic';
 
-const EVENTS = new Set(['view', 'spin', 'claim_click']);
+const EVENTS = new Set(['view', 'spin', 'claim_click', 'auto_redirect']);
 
 // Beacon sink for the promo funnel. Host comes from the request, never the
 // body, so a visitor cannot attribute events to the other domain.
