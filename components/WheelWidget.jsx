@@ -323,7 +323,8 @@ function WinnerTicker({ isLowEnd }) {
       <div style={{ ...rail, bottom: 4 }} />
       {/* key remounts the line so the board visibly refreshes on each winner */}
       <div key={swap} style={isLowEnd ? {} : { animation: 'bwTickerIn 0.35s ease-out' }}>
-        <FitText max={13} min={9} fill={0.97} className="font-bold uppercase" style={{
+        <FitText max={13} min={8} fill={0.97} className="font-bold uppercase" style={{
+          textAlign: 'center',
           letterSpacing: '0.08em',
           fontVariantNumeric: 'tabular-nums',
           color: winner.jackpot ? '#ff5f5f' : '#ffd24a',
@@ -331,7 +332,7 @@ function WinnerTicker({ isLowEnd }) {
             ? '0 0 10px rgba(255,95,95,0.55)'
             : '0 0 8px rgba(255,210,74,0.4)',
         }}>
-          {winner.name.toUpperCase()} FROM {winner.town.toUpperCase()} WON{winner.jackpot ? ' THE JACKPOT OF' : ''}{' '}
+          {winner.name.toUpperCase()} {winner.surname.toUpperCase()} FROM {winner.town.toUpperCase()} WON{winner.jackpot ? ' THE JACKPOT OF' : ''}{' '}
           <span style={{ color: winner.jackpot ? '#ffd24a' : '#fff' }}>
             K{winner.prize.toLocaleString('en-US')}
           </span>!
