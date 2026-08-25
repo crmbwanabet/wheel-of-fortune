@@ -824,8 +824,10 @@
       var targetPath = isNew ? '/en/auth/signup' : '/en/auth/signin';
       var targetUrl = arrivalBase() + (isNew ? '/en/auth/signup?ref_id=A252' : '/en/auth/signin');
       var onTargetPage = location.pathname.indexOf(targetPath) === 0;
-      var line = isNew ? 'Register now to get 50 free spins!' : 'Log in to get 50 free spins!';
-      var btnText = isNew ? 'Register now!' : 'Log in now!';
+      var line = isNew
+        ? 'REGISTER AND MAKE A DEPOSIT TO CLAIM YOUR 50 FREE SPINS!'
+        : 'LOG IN AND MAKE A DEPOSIT TO CLAIM YOUR 50 FREE SPINS!';
+      var btnText = isNew ? 'REGISTER NOW!' : 'LOG IN NOW!';
 
       var css = document.createElement('style');
       css.textContent =
@@ -872,9 +874,9 @@
         'filter:drop-shadow(0 3px 0 rgba(58,1,8,.9)) drop-shadow(0 0 22px rgba(255,215,0,.45));';
 
       var what = document.createElement('div');
-      what.textContent = 'FREE SPINS';
-      what.style.cssText = 'position:relative;font-size:21px;font-weight:900;letter-spacing:.18em;' +
-        'color:#fff;text-shadow:0 2px 0 rgba(58,1,8,.9);margin-top:4px;';
+      what.textContent = 'AVIATOR FREE SPINS';
+      what.style.cssText = 'position:relative;font-size:17px;font-weight:900;letter-spacing:.12em;' +
+        'color:#fff;text-shadow:0 2px 0 rgba(58,1,8,.9);margin-top:4px;white-space:nowrap;';
 
       var msg = document.createElement('div');
       msg.textContent = line;
