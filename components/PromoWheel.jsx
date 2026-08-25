@@ -101,7 +101,7 @@ export default function PromoWheel({ site }) {
   // card holds for a beat, then the page moves on to BwanaBet by itself —
   // where embed.js sees the wof marker on the destination URL and greets the
   // visitor with the arrival popup.
-  const REDIRECT_MS = 3000;
+  const REDIRECT_MS = 10000;
   useEffect(() => {
     if (screen !== 'result') return undefined;
     const id = setTimeout(() => {
@@ -186,11 +186,7 @@ export default function PromoWheel({ site }) {
   return (
     <main className="promo-root" style={{ backgroundImage: `url(${bg})` }}>
       <div className="promo-layout">
-        <h1 className="promo-head">
-          {site.variant === 'new'
-            ? <>Spin to win <b>50 Aviator Free Spins</b></>
-            : <>Your <b>50 Aviator Free Spins</b> are waiting</>}
-        </h1>
+        <h1 className="promo-head"><b>Free bonus.</b> Spin to win!</h1>
 
         <div className="promo-wheel-wrap" aria-label="Prize wheel">
 
@@ -532,7 +528,7 @@ export default function PromoWheel({ site }) {
             {isSpinning ? 'Spinning…' : 'Spin now'}
           </button>
         </div>
-        <p className="promo-fine">Free to play. One spin per visitor. 18+. T&amp;Cs apply.</p>
+        <p className="promo-fine">Free to play. 18+. T&amp;Cs apply.</p>
       </div>
 
       {screen === 'result' && (
@@ -544,12 +540,10 @@ export default function PromoWheel({ site }) {
             <div className="promo-rays" aria-hidden="true" />
             <div className="promo-bulbs" aria-hidden="true" />
             <Confetti />
-            <h2 className="promo-winner" id="promo-congrats">Winner</h2>
+            <h2 className="promo-winner" id="promo-congrats">You have won</h2>
             <p className="promo-fifty" aria-hidden="true">50</p>
-            <p className="promo-what" aria-hidden="true">Free Spins</p>
-            <p className="promo-on">
-              <span className="sr-only">You&apos;ve won 50 free spins </span>
-              on <b>Aviator</b>{site.variant === 'new' ? ', added when you register' : ', already in your account'}
+            <p className="promo-what">
+              <span className="sr-only">You have won 50 </span>Aviator Free Spins
             </p>
             <a className="promo-claim" href={site.destination} onClick={() => { if (!isTestMode) sendEvent('claim_click', site.variant); }}>
               {site.ctaText}

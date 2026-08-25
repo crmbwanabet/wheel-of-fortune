@@ -28,7 +28,7 @@
   font-size: clamp(26px, 6vw, 56px); line-height: 1.02; text-shadow: 0 4px 24px rgba(0,0,0,.6);
 }
 .promo-head b { color: #FEF200; }
-.promo-fine { grid-area: fine; margin: 0; font-size: 12px; color: rgba(255,255,255,.65); max-width: 420px; }
+.promo-fine { grid-area: fine; margin: 0; font-size: 12px; color: rgba(255,255,255,.65); max-width: 420px; text-transform: uppercase; letter-spacing: .04em; }
 
 /* Wheel. The wheel itself (chrome frame, slices, pointer, hub) is built in
    PromoWheel.jsx as a copy of the money wheel's SVG construction — this file
@@ -101,8 +101,8 @@
   filter: drop-shadow(0 4px 0 rgba(58,1,8,.9)) drop-shadow(0 0 26px rgba(255,215,0,.45));
 }
 .promo-what {
-  position: relative; margin: 6px 0 0; font-size: clamp(21px, 6vw, 27px); font-weight: 900;
-  text-transform: uppercase; letter-spacing: .18em; color: #fff; text-shadow: 0 2px 0 rgba(58,1,8,.9);
+  position: relative; margin: 6px 0 0; font-size: clamp(18px, 5vw, 24px); font-weight: 900;
+  text-transform: uppercase; letter-spacing: .1em; color: #fff; text-shadow: 0 2px 0 rgba(58,1,8,.9);
 }
 .promo-on { position: relative; margin: 10px 0 18px; font-size: 15px; color: rgba(255,255,255,.85); }
 .promo-on b { color: #FEF200; }
@@ -113,7 +113,7 @@
   box-shadow: 0 8px 28px rgba(254,242,0,.4), inset 0 1.5px 0 rgba(255,255,255,.7), inset 0 -3px 0 rgba(0,0,0,.18);
   animation: promoPulse 1.2s ease-in-out infinite;
 }
-.promo-sub { position: relative; margin: 13px 0 0; font-size: 13px; color: rgba(255,255,255,.7); }
+.promo-sub { position: relative; margin: 13px 0 0; font-size: 13px; color: rgba(255,255,255,.7); text-transform: uppercase; letter-spacing: .04em; }
 
 /* Confetti: absolutely positioned pieces with randomised CSS vars */
 .promo-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
