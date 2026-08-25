@@ -9,6 +9,7 @@ import { classifySpinRecovery } from '@/lib/spinRecovery';
 import { computeLanding } from '@/lib/wheelLanding';
 import { resolveLandingSegment } from '@/lib/landingSegment';
 import { msUntilNextWheelReset, splitCountdown } from '@/lib/countdown';
+import { nextWinner, nextDelayMs } from '@/lib/winnerTicker';
 
 // ============================================================================
 // DATA — 14 segments: six real prizes on even indices 0..10 in ascending
@@ -280,6 +281,63 @@ function FitText({ children, max = 32, min = 13, fill = 0.9, className = '', sty
       style={{ display: 'block', whiteSpace: 'nowrap', lineHeight: 1.05, ...style }}>
       {children}
     </span>
+  );
+}
+
+// Readerboard above the wheel: a rotating line of simulated winners between
+// two bulb rails — the same rails the loss card's countdown strip uses, so it
+// reads as part of the cabinet. Data rules live in lib/winnerTicker.js.
+// Low-end devices skip the rail pulse and the swap animation, matching how
+// the rest of the widget degrades.
+function WinnerTicker({ isLowEnd }) {
+  const [winner, setWinner] = useState(() => nextWinner(null));
+  const [swap, setSwap] = useState(0);
+  useEffect(() => {
+    let timer;
+    let cancelled = false;
+    const loop = () => {
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        setWinner((w) => nextWinner(w.name));
+        setSwap((n) => n + 1);
+        loop();
+      }, nextDelayMs());
+    };
+    loop();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, []);
+
+  const rail = {
+    position: 'absolute', left: 7, right: 7, height: 3,
+    background: 'repeating-linear-gradient(90deg,#ffd24a 0 3px,transparent 3px 11px)',
+    filter: 'drop-shadow(0 0 3px rgba(255,210,74,0.6))',
+    ...(isLowEnd ? {} : { animation: 'bwTickerRail 2.6s ease-in-out infinite' }),
+  };
+  return (
+    <div aria-hidden="true" style={{
+      position: 'relative', margin: '0 0 10px', padding: '11px 10px 10px',
+      background: '#0d0f17', border: '1px solid #333a4d', borderRadius: 8,
+      boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.55)', overflow: 'hidden',
+    }}>
+      <div style={{ ...rail, top: 4 }} />
+      <div style={{ ...rail, bottom: 4 }} />
+      {/* key remounts the line so the board visibly refreshes on each winner */}
+      <div key={swap} style={isLowEnd ? {} : { animation: 'bwTickerIn 0.35s ease-out' }}>
+        <FitText max={13} min={9} fill={0.97} className="font-bold uppercase" style={{
+          letterSpacing: '0.08em',
+          fontVariantNumeric: 'tabular-nums',
+          color: winner.jackpot ? '#ff5f5f' : '#ffd24a',
+          textShadow: winner.jackpot
+            ? '0 0 10px rgba(255,95,95,0.55)'
+            : '0 0 8px rgba(255,210,74,0.4)',
+        }}>
+          {winner.name.toUpperCase()} FROM {winner.town.toUpperCase()} WON{winner.jackpot ? ' THE JACKPOT OF' : ''}{' '}
+          <span style={{ color: winner.jackpot ? '#ffd24a' : '#fff' }}>
+            K{winner.prize.toLocaleString('en-US')}
+          </span>!
+        </FitText>
+      </div>
+    </div>
   );
 }
 
@@ -1345,6 +1403,9 @@ export default function WheelWidget({ prefillUserId = null }) {
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
             }}><FitText max={44} fill={0.98}>SPIN AND WIN</FitText></h1>
           </div>
+
+          {/* Winner readerboard — simulated social proof, rules in lib/winnerTicker.js */}
+          <WinnerTicker isLowEnd={isLowEnd} />
 
           {/* ============ WHEEL AREA ============ */}
           <div className="relative mx-auto" style={{ width: '100%', maxWidth: WHEEL_SIZE + 50, aspectRatio: '1' }}>

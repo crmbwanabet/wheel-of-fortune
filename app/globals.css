@@ -143,3 +143,7 @@ body {
   83% { transform: translateX(1px); }
   100% { transform: translateX(0); }
 }
+
+/* Winner readerboard (WheelWidget): rail pulse + line refresh */
+@keyframes bwTickerRail { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@keyframes bwTickerIn { from { opacity: 0.1; transform: translateY(3px); } to { opacity: 1; transform: none; } }
