@@ -1,10 +1,12 @@
 {
   "functions": {
-    "app/api/spin/route.js": { "maxDuration": 15 }
+    "app/api/spin/route.js": { "maxDuration": 15 },
+    "app/api/notify-sweep/route.js": { "maxDuration": 30 }
   },
   "regions": ["dub1"],
   "crons": [
     { "path": "/api/digest", "schedule": "10 7 * * *" },
-    { "path": "/api/gate-monitor", "schedule": "*/10 * * * *" }
+    { "path": "/api/gate-monitor", "schedule": "*/10 * * * *" },
+    { "path": "/api/notify-sweep", "schedule": "*/5 * * * *" }
   ]
 }
