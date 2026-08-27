@@ -375,6 +375,9 @@ const SUIT_TILE = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000
 const WM_DIAMOND = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cpath d='M60 6l36 54-36 54-36-54z' fill='rgba(255,215,0,0.07)'/%3E%3C/svg%3E\")";
 const WM_SPADE = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cpath d='M70 10c22 27 44 41 44 63a22 22 0 0 1-38 14 52 52 0 0 0 8 27h-28a52 52 0 0 0 8-27 22 22 0 0 1-38-14c0-22 22-36 44-63z' fill='rgba(255,255,255,0.055)'/%3E%3C/svg%3E\")";
 const CABINET_GRADIENT = 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)';
+// Box days sit on black (owner spec) — a whisper of gradient keeps depth so
+// it reads as velvet rather than a dead flat fill.
+const BOX_BASE_GRADIENT = 'linear-gradient(180deg, #17171c 0%, #0c0c10 45%, #050506 100%)';
 // Layer order = paint order (first is on top): gold stage light, vignette,
 // two corner beams, the big watermark suits, the repeating suit tile, base.
 const BOX_CARD_BACKGROUND = [
@@ -385,7 +388,7 @@ const BOX_CARD_BACKGROUND = [
   WM_DIAMOND,
   WM_SPADE,
   SUIT_TILE,
-  CABINET_GRADIENT,
+  BOX_BASE_GRADIENT,
 ].join(', ');
 const BOX_CARD_BG_SIZE = 'auto, auto, auto, auto, 130px 130px, 160px 160px, 128px 128px, auto';
 const BOX_CARD_BG_POS = '0 0, 0 0, 0 0, 0 0, -34px 96px, calc(100% + 44px) calc(100% - 36px), 0 0, 0 0';
