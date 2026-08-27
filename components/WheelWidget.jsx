@@ -357,24 +357,53 @@ function WinnerTicker({ isLowEnd }) {
 //   reveal  — chosen box opens on the result; the others show the rest
 // ============================================================================
 function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
-  // slots[slotIndex] = box id occupying that grid cell. Swapping slot
-  // contents (not ids) makes each box glide to its new cell via the CSS
-  // left/top transition.
+  // slots[slotIndex] = box id occupying that grid cell.
+  //
+  // The shuffle is deliberately UNTRACKABLE, not merely fast. Players film
+  // these games; anyone who could visually follow "the K10,000 box" through
+  // the shuffle and then lose after picking it would have video that looks
+  // like proof of cheating. So instead of swapping grid cells (traceable),
+  // the boxes GATHER into one overlapping pile in the centre — nine identical
+  // boxes occluding each other, which severs identity completely — churn
+  // there in a fast blur, then SCATTER back out in a fresh random order.
+  // After the pile, "which box had which prize" is not merely hard to track;
+  // it is undefined.
   const [slots, setSlots] = useState(() => [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  const [mode, setMode] = useState('grid'); // grid | gather | swirl | scatter
+  const [jitter, setJitter] = useState(null); // per-box {x,y,z} while swirling
   useEffect(() => {
-    if (phase === 'intro') setSlots([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    if (phase === 'intro') { setSlots([0, 1, 2, 3, 4, 5, 6, 7, 8]); setMode('grid'); }
+    if (phase === 'pick') setMode('grid');
     if (phase !== 'shuffle') return undefined;
-    const iv = setInterval(() => {
+    let iv = null;
+    setMode('gather');
+    const swirlMs = isLowEnd ? 140 : 80;
+    const t1 = setTimeout(() => {
+      setMode('swirl');
+      iv = setInterval(() => {
+        setJitter(Array.from({ length: 9 }, () => ({
+          x: (Math.random() - 0.5) * 22,
+          y: (Math.random() - 0.5) * 20,
+          z: 1 + Math.floor(Math.random() * 9),
+        })));
+      }, swirlMs);
+    }, 500);
+    const t2 = setTimeout(() => {
+      if (iv) clearInterval(iv);
+      // Fresh random arrangement on the way out — the exit order shares
+      // nothing with the entry order.
       setSlots((prev) => {
         const next = prev.slice();
-        const a = Math.floor(Math.random() * 9);
-        let b = Math.floor(Math.random() * 9);
-        if (b === a) b = (b + 1) % 9;
-        const t = next[a]; next[a] = next[b]; next[b] = t;
+        for (let j = next.length - 1; j > 0; j--) {
+          const k = Math.floor(Math.random() * (j + 1));
+          const t = next[j]; next[j] = next[k]; next[k] = t;
+        }
         return next;
       });
-    }, isLowEnd ? 260 : 150);
-    return () => clearInterval(iv);
+      setJitter(null);
+      setMode('scatter');
+    }, 3400);
+    return () => { clearTimeout(t1); clearTimeout(t2); if (iv) clearInterval(iv); };
   }, [phase, isLowEnd]);
 
   const caption = phase === 'intro' ? 'THE PRIZES GO INTO THE BOXES…'
@@ -405,6 +434,23 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
         const revealed = phase === 'reveal';
         const label = revealed ? (isChosen ? reveal.label : decoyFor(id)) : null;
         const isWinLabel = revealed && isChosen && reveal.isWin;
+        // Position by shuffle mode: grid cell normally, the centre pile while
+        // gathering/swirling, and a springy glide back out on scatter.
+        let left = 2.5 + col * 33.5, top = 7 + row * 30;
+        let trans = 'left 0.14s ease-in-out, top 0.14s ease-in-out';
+        let z = isChosen ? 3 : 1;
+        if (mode === 'gather') {
+          left = 35.5; top = 37;
+          trans = 'left 0.45s ease-in, top 0.45s ease-in';
+          z = (id * 7) % 9 + 1;
+        } else if (mode === 'swirl') {
+          const j = (jitter && jitter[id]) || { x: 0, y: 0, z: 1 };
+          left = 35.5 + j.x; top = 37 + j.y;
+          trans = 'left 0.08s linear, top 0.08s linear';
+          z = j.z;
+        } else if (mode === 'scatter') {
+          trans = 'left 0.5s cubic-bezier(.2,.8,.3,1), top 0.5s cubic-bezier(.2,.8,.3,1)';
+        }
         return (
           <button
             key={id}
@@ -415,12 +461,11 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
             className="absolute"
             style={{
               width: '29%', height: '26%',
-              left: (2.5 + col * 33.5) + '%',
-              top: (7 + row * 30) + '%',
-              // The glide between cells during the shuffle.
-              transition: 'left 0.14s ease-in-out, top 0.14s ease-in-out',
+              left: left + '%',
+              top: top + '%',
+              transition: trans,
               cursor: phase === 'pick' ? 'pointer' : 'default',
-              zIndex: isChosen ? 3 : 1,
+              zIndex: z,
               background: 'transparent', border: 0, padding: 0,
             }}
           >
