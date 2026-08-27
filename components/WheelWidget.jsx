@@ -1303,8 +1303,8 @@ export default function WheelWidget({ prefillUserId = null }) {
     const label = isWin ? 'K' + Number(seg.prize.kwacha).toLocaleString('en-US') : 'TRY AGAIN';
     setBoxReveal({ label, isWin, decoys: boxDecoys(label) });
     setBoxPhase('reveal');
-    // A beat on the opened box before the result card — mirrors the wheel's
-    // pause on the landed slice.
+    // Four seconds on the opened boxes (owner spec) — long enough to read
+    // the chosen prize AND what the other boxes held — then the result card.
     setTimeout(() => {
       setScreen('result');
       setSpinResult(seg);
@@ -1323,7 +1323,7 @@ export default function WheelWidget({ prefillUserId = null }) {
         startLoop();
         if (seg.prize?.kwacha) spawnFloatingNumber('+K' + seg.prize.kwacha, cx, cy - 40, '#fbbf24');
       }
-    }, 1600);
+    }, 4000);
   }, [isTestMode, spawnParticles, startLoop, spawnFloatingNumber]);
 
   // The box tap — the mystery-box counterpart of stopWheel: same API call,
@@ -1648,7 +1648,14 @@ export default function WheelWidget({ prefillUserId = null }) {
       {spinResult && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
           <div className="text-center px-3 py-6 rounded-3xl max-w-xs w-full mx-4" style={{
-            background: 'linear-gradient(180deg, rgba(30,40,60,0.95), rgba(15,20,35,0.98))',
+            // Box days: the result card wears the same black casino backdrop
+            // as the main card, so the takeover reads as one surface.
+            background: game === 'box' ? BOX_CARD_BACKGROUND : 'linear-gradient(180deg, rgba(30,40,60,0.95), rgba(15,20,35,0.98))',
+            ...(game === 'box' ? {
+              backgroundSize: BOX_CARD_BG_SIZE,
+              backgroundPosition: BOX_CARD_BG_POS,
+              backgroundRepeat: BOX_CARD_BG_REPEAT,
+            } : {}),
             border: `2px solid ${spinResult.isLoss ? 'rgba(156,163,175,0.3)' : 'rgba(251,191,36,0.3)'}`,
             boxShadow: spinResult.isLoss
               ? '0 0 60px rgba(100,100,100,0.1), 0 20px 60px rgba(0,0,0,0.5)'
