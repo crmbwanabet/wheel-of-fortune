@@ -371,14 +371,25 @@ function simulateTestOutcome(forceWinParam) {
 // and dots, inlined as ~1KB of SVG so it ships inside the bundle — no image
 // request, no late pop-in, crisp at any pixel density. Opacities are kept
 // around 5% so the motif reads as texture, never as content.
-const SUIT_TILE = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cpath d='M24 14l5.5 8-5.5 8-5.5-8z' fill='rgba(255,215,0,0.055)'/%3E%3Cpath d='M70 52c4 5 8 7.5 8 11.5a4 4 0 0 1-7 2.6 10 10 0 0 0 1.6 4.9h-5.2a10 10 0 0 0 1.6-4.9 4 4 0 0 1-7-2.6c0-4 4-6.5 8-11.5z' fill='rgba(255,255,255,0.045)'/%3E%3Ccircle cx='72' cy='18' r='1.6' fill='rgba(255,255,255,0.05)'/%3E%3Ccircle cx='20' cy='72' r='1.6' fill='rgba(255,215,0,0.05)'/%3E%3C/svg%3E\")";
+const SUIT_TILE = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cpath d='M30 16l8 12-8 12-8-12z' fill='rgba(255,215,0,0.11)'/%3E%3Cpath d='M94 30c-6-8-15-4-15 2.5 0 6.5 15 15.5 15 15.5s15-9 15-15.5c0-6.5-9-10.5-15-2.5z' fill='rgba(239,68,68,0.10)'/%3E%3Cpath d='M34 84c5.5 7 11 10 11 15.5a5.5 5.5 0 0 1-9.6 3.6 13 13 0 0 0 2.1 6.4h-7a13 13 0 0 0 2.1-6.4 5.5 5.5 0 0 1-9.6-3.6c0-5.5 5.5-8.5 11-15.5z' fill='rgba(255,255,255,0.09)'/%3E%3Cg fill='rgba(255,255,255,0.08)'%3E%3Ccircle cx='98' cy='92' r='6'/%3E%3Ccircle cx='91' cy='101' r='6'/%3E%3Ccircle cx='105' cy='101' r='6'/%3E%3Crect x='96.5' y='102' width='3' height='10' rx='1'/%3E%3C/g%3E%3Ccircle cx='94' cy='64' r='1.8' fill='rgba(255,215,0,0.09)'/%3E%3Ccircle cx='30' cy='56' r='1.8' fill='rgba(255,255,255,0.08)'/%3E%3C/svg%3E\")";
+const WM_DIAMOND = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cpath d='M60 6l36 54-36 54-36-54z' fill='rgba(255,215,0,0.07)'/%3E%3C/svg%3E\")";
+const WM_SPADE = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cpath d='M70 10c22 27 44 41 44 63a22 22 0 0 1-38 14 52 52 0 0 0 8 27h-28a52 52 0 0 0 8-27 22 22 0 0 1-38-14c0-22 22-36 44-63z' fill='rgba(255,255,255,0.055)'/%3E%3C/svg%3E\")";
 const CABINET_GRADIENT = 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)';
+// Layer order = paint order (first is on top): gold stage light, vignette,
+// two corner beams, the big watermark suits, the repeating suit tile, base.
 const BOX_CARD_BACKGROUND = [
-  'radial-gradient(120% 80% at 50% 0%, rgba(255,215,0,0.06), transparent 55%)',
-  'radial-gradient(150% 120% at 50% 55%, transparent 60%, rgba(0,0,0,0.38) 100%)',
+  'radial-gradient(120% 80% at 50% 0%, rgba(255,215,0,0.10), transparent 55%)',
+  'radial-gradient(150% 120% at 50% 55%, transparent 58%, rgba(0,0,0,0.42) 100%)',
+  'linear-gradient(112deg, rgba(255,215,0,0.09), transparent 26%)',
+  'linear-gradient(248deg, rgba(255,215,0,0.09), transparent 26%)',
+  WM_DIAMOND,
+  WM_SPADE,
   SUIT_TILE,
   CABINET_GRADIENT,
 ].join(', ');
+const BOX_CARD_BG_SIZE = 'auto, auto, auto, auto, 130px 130px, 160px 160px, 128px 128px, auto';
+const BOX_CARD_BG_POS = '0 0, 0 0, 0 0, 0 0, -34px 96px, calc(100% + 44px) calc(100% - 36px), 0 0, 0 0';
+const BOX_CARD_BG_REPEAT = 'no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat, no-repeat';
 
 // Chip and reveal colours per prize, matching the wheel's slice palette so
 // the boxes read as the same machine.
@@ -1754,7 +1765,11 @@ export default function WheelWidget({ prefillUserId = null }) {
         // vignette, all inline — see BOX_CARD_BACKGROUND); wheel days keep
         // the plain cabinet exactly as approved.
         background: game === 'box' ? BOX_CARD_BACKGROUND : CABINET_GRADIENT,
-        ...(game === 'box' ? { backgroundSize: 'auto, auto, 96px 96px, auto' } : {}),
+        ...(game === 'box' ? {
+          backgroundSize: BOX_CARD_BG_SIZE,
+          backgroundPosition: BOX_CARD_BG_POS,
+          backgroundRepeat: BOX_CARD_BG_REPEAT,
+        } : {}),
         boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
         border: '3px solid #3a3f52',
         ...(shaking ? { animation: 'winShake 0.15s ease-out' } : {}),
