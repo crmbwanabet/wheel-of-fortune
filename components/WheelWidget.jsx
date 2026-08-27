@@ -375,21 +375,34 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
     if (phase === 'intro') { setSlots([0, 1, 2, 3, 4, 5, 6, 7, 8]); setMode('grid'); }
     if (phase === 'pick') setMode('grid');
     if (phase !== 'shuffle') return undefined;
-    let iv = null;
-    setMode('gather');
+    // Three acts inside the 4s window: visible grid swaps first (reads as
+    // shuffling), then the identity-destroying pile, then the scatter.
+    let swapIv = null, swirlIv = null;
+    setMode('grid');
+    swapIv = setInterval(() => {
+      setSlots((prev) => {
+        const next = prev.slice();
+        const a = Math.floor(Math.random() * 9);
+        let b = Math.floor(Math.random() * 9);
+        if (b === a) b = (b + 1) % 9;
+        const t = next[a]; next[a] = next[b]; next[b] = t;
+        return next;
+      });
+    }, isLowEnd ? 220 : 130);
     const swirlMs = isLowEnd ? 140 : 80;
+    const t0 = setTimeout(() => { if (swapIv) { clearInterval(swapIv); swapIv = null; } setMode('gather'); }, 1300);
     const t1 = setTimeout(() => {
       setMode('swirl');
-      iv = setInterval(() => {
+      swirlIv = setInterval(() => {
         setJitter(Array.from({ length: 9 }, () => ({
           x: (Math.random() - 0.5) * 22,
           y: (Math.random() - 0.5) * 20,
           z: 1 + Math.floor(Math.random() * 9),
         })));
       }, swirlMs);
-    }, 500);
+    }, 1800);
     const t2 = setTimeout(() => {
-      if (iv) clearInterval(iv);
+      if (swirlIv) clearInterval(swirlIv);
       // Fresh random arrangement on the way out — the exit order shares
       // nothing with the entry order.
       setSlots((prev) => {
@@ -403,7 +416,11 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
       setJitter(null);
       setMode('scatter');
     }, 3400);
-    return () => { clearTimeout(t1); clearTimeout(t2); if (iv) clearInterval(iv); };
+    return () => {
+      clearTimeout(t0); clearTimeout(t1); clearTimeout(t2);
+      if (swapIv) clearInterval(swapIv);
+      if (swirlIv) clearInterval(swirlIv);
+    };
   }, [phase, isLowEnd]);
 
   const caption = phase === 'intro' ? 'THE PRIZES GO INTO THE BOXES…'
