@@ -296,13 +296,19 @@ function WinnerTicker({ isLowEnd }) {
   useEffect(() => {
     let timer;
     let cancelled = false;
+    let current = null;
     const loop = () => {
+      // The delay is decided by what is ON SCREEN: a jackpot line holds 1s
+      // longer than an ordinary win so the rare flash gets read.
       timer = setTimeout(() => {
         if (cancelled) return;
-        setWinner((w) => nextWinner(w.name));
+        setWinner((w) => {
+          current = nextWinner(w.name);
+          return current;
+        });
         setSwap((n) => n + 1);
         loop();
-      }, nextDelayMs());
+      }, nextDelayMs(current));
     };
     loop();
     return () => { cancelled = true; clearTimeout(timer); };
@@ -445,47 +451,69 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
   // stack over one another dozens of times. Every occlusion severs the
   // trail; by the scatter, "which box had which prize" is undefined.
   const [slots, setSlots] = useState(() => [0, 1, 2, 3, 4, 5, 6, 7, 8]);
-  const [mode, setMode] = useState('grid'); // grid | chaos | scatter
-  const [jitter, setJitter] = useState(null); // per-box {x,y,z} while swirling
+  const [mode, setMode] = useState('grid'); // grid | scatter (orbit drives styles directly)
+  const boxRefs = useRef([]);
   useEffect(() => {
     if (phase === 'intro') { setSlots([0, 1, 2, 3, 4, 5, 6, 7, 8]); setMode('grid'); }
-    if (phase === 'pick') setMode('grid');
+    if (phase === 'pick') {
+      // The orbit wrote positions behind React's back, so React's diff would
+      // skip any box it believes unmoved. Deal a fresh random arrangement and
+      // place EVERY chest on its grid cell imperatively, then sync state.
+      const perm = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+      for (let j = perm.length - 1; j > 0; j--) {
+        const k = Math.floor(Math.random() * (j + 1));
+        const tv = perm[j]; perm[j] = perm[k]; perm[k] = tv;
+      }
+      for (let i = 0; i < 9; i++) {
+        const el = boxRefs.current[i];
+        if (!el) continue;
+        const slot = perm.indexOf(i);
+        el.style.transition = 'left 0.45s cubic-bezier(.2,.8,.3,1), top 0.45s cubic-bezier(.2,.8,.3,1)';
+        el.style.left = (2.5 + (slot % 3) * 33.5) + '%';
+        el.style.top = (7 + Math.floor(slot / 3) * 30) + '%';
+        el.style.zIndex = '1';
+      }
+      setSlots(perm);
+      setMode('grid');
+    }
     if (phase !== 'shuffle') return undefined;
-    // One continuous chaos: every tick, every box flies to a fresh random
-    // spot anywhere on the stage, with positions biased toward the centre so
-    // paths constantly cross and boxes constantly stack over one another.
-    // The wide travel reads as vigorous shuffling; the perpetual occlusion is
-    // what makes the motion untrackable on a recording — identical boxes
-    // overlap dozens of times, and each overlap severs the trail.
-    let iv = null;
-    const chaosTick = () => {
-      setJitter(Array.from({ length: 9 }, () => ({
-        // (random-0.5)*2 * random  -> ±1 with a centre-heavy distribution
-        x: (Math.random() - 0.5) * 2 * Math.random() * 33,
-        y: (Math.random() - 0.5) * 2 * Math.random() * 30,
-        z: 1 + Math.floor(Math.random() * 9),
-      })));
+    // The shuffle: all chests whirl round the centre, accelerating to a speed
+    // where frame-to-frame motion exceeds the spacing between chests — on any
+    // recording that aliases (the wagon-wheel effect), so no chest can be
+    // followed even in slow motion. Mid-spin the ring collapses once through
+    // the centre (nine identical chests in one spot), which severs identity
+    // outright. Driven per-frame via refs, same technique as the wheel; the
+    // loop spins until the phase changes — no timers to race or throttle.
+    let raf = null;
+    let active = true;
+    let angle = 0;
+    let last = null;
+    const t0 = performance.now();
+    const R0 = 30;                       // ring radius, % of the stage
+    const PEAK_RPS = isLowEnd ? 2.2 : 4; // revolutions per second at full speed
+    const step = (now) => {
+      if (!active) return;
+      const t = (now - t0) / 1000;
+      const dt = last === null ? 0 : Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const rps = Math.min(PEAK_RPS, 0.6 + t * 3.2); // quick ramp to full speed
+      angle += rps * 360 * dt;
+      // One collapse through the centre around the midpoint of the spin.
+      const collapse = Math.max(0, 1 - Math.abs(t - 1.7) / 0.35);
+      const R = R0 * (1 - collapse);
+      for (let i = 0; i < 9; i++) {
+        const el = boxRefs.current[i];
+        if (!el) continue;
+        const a = (angle + i * 40) * (Math.PI / 180);
+        el.style.transition = 'none';
+        el.style.left = (35.5 + R * Math.cos(a)) + '%';
+        el.style.top = (37 + R * 0.85 * Math.sin(a)) + '%';
+        el.style.zIndex = String(Math.sin(a) > 0 ? 3 : 1);
+      }
+      raf = requestAnimationFrame(step);
     };
-    setMode('chaos');
-    chaosTick();
-    iv = setInterval(chaosTick, isLowEnd ? 220 : 130);
-    const t = setTimeout(() => {
-      clearInterval(iv);
-      iv = null;
-      // Fresh random arrangement on the way out — the exit order shares
-      // nothing with the entry order.
-      setSlots((prev) => {
-        const next = prev.slice();
-        for (let j = next.length - 1; j > 0; j--) {
-          const k = Math.floor(Math.random() * (j + 1));
-          const t2 = next[j]; next[j] = next[k]; next[k] = t2;
-        }
-        return next;
-      });
-      setJitter(null);
-      setMode('scatter');
-    }, 3400);
-    return () => { clearTimeout(t); if (iv) clearInterval(iv); };
+    raf = requestAnimationFrame(step);
+    return () => { active = false; if (raf) cancelAnimationFrame(raf); };
   }, [phase, isLowEnd]);
 
   const caption = phase === 'intro' ? 'THE PRIZES GO INTO THE BOXES…'
@@ -521,18 +549,10 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
         let left = 2.5 + col * 33.5, top = 7 + row * 30;
         let trans = 'left 0.14s ease-in-out, top 0.14s ease-in-out';
         let z = isChosen ? 3 : 1;
-        if (mode === 'chaos') {
-          const j = (jitter && jitter[id]) || { x: 0, y: 0, z: 1 };
-          left = Math.max(2, Math.min(69, 35.5 + j.x));
-          top = Math.max(6, Math.min(66, 37 + j.y));
-          trans = 'left 0.13s ease-in-out, top 0.13s ease-in-out';
-          z = j.z;
-        } else if (mode === 'scatter') {
-          trans = 'left 0.5s cubic-bezier(.2,.8,.3,1), top 0.5s cubic-bezier(.2,.8,.3,1)';
-        }
         return (
           <button
             key={id}
+            ref={(el) => { boxRefs.current[id] = el; }}
             type="button"
             onClick={() => onPick(id)}
             disabled={phase !== 'pick'}
