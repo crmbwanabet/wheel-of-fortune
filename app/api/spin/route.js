@@ -250,6 +250,9 @@ async function handleSpin(request) {
         spinNumber: result.spin_number,
         payoutMode: WHEEL_PAYOUT_MODE,
         poolSize: prizeQueue.length,
+        // Keys the delivery-guarantee outbox; /api/notify-sweep re-sends
+        // anything Telegram rejects until it lands.
+        dayDate,
       }).then((delivered) => {
         if (!delivered) {
           // The DB row is the payout record the ops group never received.
