@@ -345,6 +345,52 @@ function WinnerTicker({ isLowEnd }) {
   );
 }
 
+// Test-mode-only simulated outcome. Browser test spins cannot authenticate
+// (the test token is a server secret), so /api/spin always rejects them and
+// every reviewer used to see a scripted loss — wins were unreviewable. In
+// test mode the outcome is synthesised locally instead: ?forceWin=<amount>
+// picks that exact prize, otherwise 50/50 win/loss across the real prizes.
+// Real traffic never reaches this path.
+function simulateTestOutcome(forceWinParam) {
+  const winSegs = WHEEL_SEGMENTS
+    .map((s, i) => ({ s, i }))
+    .filter((x) => !x.s.isLoss && x.s.prize);
+  if (forceWinParam) {
+    const want = Number(forceWinParam);
+    const hit = winSegs.find((x) => x.s.prize.kwacha === want) || winSegs[0];
+    return { winIndex: hit.i, data: { won: true, prize: { kwacha: hit.s.prize.kwacha } } };
+  }
+  if (Math.random() < 0.5) {
+    const hit = winSegs[Math.floor(Math.random() * winSegs.length)];
+    return { winIndex: hit.i, data: { won: true, prize: { kwacha: hit.s.prize.kwacha } } };
+  }
+  return { winIndex: resolveLandingSegment(-1).index, data: { won: false } };
+}
+
+// Chip and reveal colours per prize, matching the wheel's slice palette so
+// the boxes read as the same machine.
+const PRIZE_STYLE = {
+  'K5':        { bg: '#00e5ff', fg: '#06283a' },
+  'K10':       { bg: '#00e676', fg: '#052e16' },
+  'K20':       { bg: '#d500f9', fg: '#ffffff' },
+  'K50':       { bg: '#ff6d00', fg: '#ffffff' },
+  'K100':      { bg: '#ffd600', fg: '#4a3000' },
+  'K200':      { bg: '#ffab00', fg: '#4a3000' },
+  'K10,000':   { bg: 'linear-gradient(180deg,#ff5252,#c50e1f 55%,#7a0212)', fg: '#ffd700' },
+  'TRY AGAIN': { bg: '#78909c', fg: '#eceff1' },
+};
+function prizeChipStyle(label, fontSize, extra) {
+  const p = PRIZE_STYLE[label] || PRIZE_STYLE['TRY AGAIN'];
+  return {
+    background: p.bg, color: p.fg, fontWeight: 900, fontSize,
+    padding: '3px 9px', borderRadius: 7, whiteSpace: 'nowrap',
+    border: '1px solid rgba(0,0,0,0.35)',
+    boxShadow: '0 2px 6px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.35)',
+    letterSpacing: '0.02em',
+    ...extra,
+  };
+}
+
 // ============================================================================
 // MYSTERY BOX STAGE — the alternate game's centre stage. Purely visual: the
 // outcome is the server's spin result exactly as with the wheel; whichever
@@ -479,53 +525,88 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
               ...(revealed && !isChosen ? { opacity: 0.55 } : {}),
               transition: 'transform 0.25s ease-out, opacity 0.25s ease-out',
             }}>
-              {/* Prize chip dropping in during the intro */}
+              {/* Prize chip dropping in during the intro, coloured like its wheel slice */}
               {phase === 'intro' && (
                 <div style={{
-                  position: 'absolute', left: '50%', top: -6, zIndex: 4,
-                  animation: 'bwBoxDrop 1.5s ease-in both',
-                  background: 'linear-gradient(180deg,#fff3b0,#ffd700)', color: '#4a3000',
-                  fontWeight: 900, fontSize: 11, padding: '2px 7px', borderRadius: 6,
-                  whiteSpace: 'nowrap', boxShadow: '0 2px 6px rgba(0,0,0,.5)',
+                  position: 'absolute', left: '50%', top: -8, zIndex: 4,
+                  animation: `bwBoxDrop 1.4s ${(id % 9) * 0.06}s ease-in both`,
+                  ...prizeChipStyle(BOX_LABELS[id], 11),
                 }}>{BOX_LABELS[id]}</div>
               )}
 
-              {/* The gift box: lid + body + ribbon + bow, in the trigger icon's gold/red */}
+              {/* Ground shadow */}
               <div style={{
-                position: 'absolute', left: '6%', right: '6%', top: '22%', bottom: 0,
-                background: 'linear-gradient(135deg,#eab308,#facc15)', borderRadius: 6,
-                boxShadow: 'inset 0 2px 0 rgba(255,255,255,.35), inset 0 -4px 0 rgba(0,0,0,.18), 0 4px 10px rgba(0,0,0,.45)',
-              }} />
-              <div style={{
-                position: 'absolute', left: 0, right: 0, top: '12%', height: '18%',
-                background: 'linear-gradient(135deg,#fde047,#fef08a)', borderRadius: 5,
-                boxShadow: '0 2px 4px rgba(0,0,0,.35)',
-                ...(revealed && isChosen ? { animation: 'bwLidOpen 0.35s ease-out both' } : {}),
-              }} />
-              <div style={{
-                position: 'absolute', left: '44%', width: '12%', top: '12%', bottom: 0,
-                background: 'linear-gradient(180deg,#ef4444,#b91c1c)', borderRadius: 2,
-              }} />
-              <div style={{
-                position: 'absolute', left: '32%', top: '2%', width: '16%', height: '13%',
-                background: '#ef4444', borderRadius: '50% 50% 40% 40%', transform: 'rotate(-18deg)',
-              }} />
-              <div style={{
-                position: 'absolute', right: '32%', top: '2%', width: '16%', height: '13%',
-                background: '#ef4444', borderRadius: '50% 50% 40% 40%', transform: 'rotate(18deg)',
+                position: 'absolute', left: '10%', right: '10%', bottom: '-4%', height: '10%',
+                background: 'radial-gradient(ellipse, rgba(0,0,0,.45) 0%, transparent 70%)',
+                filter: 'blur(3px)',
               }} />
 
-              {/* Reveal label */}
+              {/* The gift box: body with side shading and gloss, overhanging
+                  lid, ribbon with highlight, proper bow — the trigger icon's
+                  gold/red, rendered bigger. */}
+              <div style={{
+                position: 'absolute', left: '6%', right: '6%', top: '24%', bottom: 0,
+                background: 'linear-gradient(160deg, #fde047 0%, #eab308 45%, #ca8a04 78%, #a16207 100%)',
+                borderRadius: 6,
+                boxShadow: 'inset 0 2px 0 rgba(255,255,255,.4), inset -6px 0 10px rgba(120,60,0,.35), inset 0 -5px 0 rgba(0,0,0,.22), 0 4px 10px rgba(0,0,0,.45)',
+              }} />
+              {/* Body gloss */}
+              <div style={{
+                position: 'absolute', left: '12%', top: '30%', width: '18%', bottom: '18%',
+                background: 'linear-gradient(100deg, rgba(255,255,255,.4), rgba(255,255,255,0))',
+                borderRadius: 6, transform: 'skewX(-8deg)',
+              }} />
+              {/* Lid, overhanging the body */}
+              <div style={{
+                position: 'absolute', left: '-1%', right: '-1%', top: '13%', height: '17%',
+                background: 'linear-gradient(160deg, #fef9c3 0%, #fde047 55%, #eab308 100%)',
+                borderRadius: 5,
+                boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,.6), 0 3px 5px rgba(0,0,0,.4)',
+                ...(revealed && isChosen ? { animation: 'bwLidOpen 0.35s ease-out both' } : {}),
+              }} />
+              {/* Ribbon */}
+              <div style={{
+                position: 'absolute', left: '43%', width: '14%', top: '13%', bottom: 0,
+                background: 'linear-gradient(90deg, #b91c1c 0%, #ef4444 35%, #f87171 50%, #ef4444 65%, #b91c1c 100%)',
+                borderRadius: 2, boxShadow: '0 0 4px rgba(0,0,0,.25)',
+              }} />
+              {/* Bow loops + knot */}
+              <div style={{
+                position: 'absolute', left: '26%', top: '1%', width: '22%', height: '14%',
+                background: 'radial-gradient(circle at 35% 35%, #f87171, #dc2626 60%, #991b1b)',
+                borderRadius: '55% 55% 45% 45%', transform: 'rotate(-22deg)',
+                boxShadow: 'inset -2px -2px 3px rgba(0,0,0,.3)',
+              }} />
+              <div style={{
+                position: 'absolute', right: '26%', top: '1%', width: '22%', height: '14%',
+                background: 'radial-gradient(circle at 65% 35%, #f87171, #dc2626 60%, #991b1b)',
+                borderRadius: '55% 55% 45% 45%', transform: 'rotate(22deg)',
+                boxShadow: 'inset 2px -2px 3px rgba(0,0,0,.3)',
+              }} />
+              <div style={{
+                position: 'absolute', left: '44%', top: '6%', width: '12%', height: '9%',
+                background: 'radial-gradient(circle at 40% 35%, #f87171, #b91c1c)',
+                borderRadius: '50%', boxShadow: '0 1px 2px rgba(0,0,0,.4)',
+              }} />
+
+              {/* Reveal: gold burst behind the chosen box's prize, chips
+                  coloured like their wheel slices everywhere */}
+              {revealed && isChosen && (
+                <div style={{
+                  position: 'absolute', left: '50%', top: '40%', width: '150%', aspectRatio: '1',
+                  transform: 'translate(-50%,-50%)', zIndex: 4, pointerEvents: 'none',
+                  animation: 'bwBoxPop 0.4s ease-out both',
+                  background: isWinLabel
+                    ? 'radial-gradient(circle, rgba(255,215,0,.55) 0%, rgba(255,215,0,.18) 45%, transparent 70%)'
+                    : 'radial-gradient(circle, rgba(148,163,184,.35) 0%, transparent 65%)',
+                }} />
+              )}
               {revealed && label && (
                 <div style={{
-                  position: 'absolute', left: '50%', top: isChosen ? '34%' : '42%', transform: 'translateX(-50%)',
-                  zIndex: 5, animation: isChosen ? 'bwBoxPop 0.35s ease-out both' : 'bwBoxPop 0.5s 0.25s ease-out both',
-                  fontWeight: 900, whiteSpace: 'nowrap',
-                  fontSize: isChosen ? 15 : 10,
-                  color: isChosen ? (isWinLabel ? '#ffd700' : '#cbd5e1') : (label === 'TRY AGAIN' ? '#94a3b8' : '#eab308'),
-                  textShadow: isChosen && isWinLabel
-                    ? '0 2px 3px rgba(0,0,0,.9), 0 0 14px rgba(255,215,0,.6)'
-                    : '0 2px 3px rgba(0,0,0,.9)',
+                  position: 'absolute', left: '50%', top: isChosen ? '30%' : '40%',
+                  zIndex: 5,
+                  animation: isChosen ? 'bwBoxPop 0.35s ease-out both' : 'bwBoxPop 0.5s 0.3s ease-out both',
+                  ...prizeChipStyle(label, isChosen ? 15 : 9, isChosen ? { padding: '5px 12px', boxShadow: '0 4px 12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.35)' } : { opacity: 0.9 }),
                 }}>{label}</div>
               )}
             </div>
@@ -1146,6 +1227,12 @@ export default function WheelWidget({ prefillUserId = null }) {
           return;
         }
         if (data.error) {
+          if (isTestMode) {
+            // Reviewers cannot authenticate test spins — simulate locally so
+            // wins are reviewable. Never reached by real traffic.
+            pendingResultRef.current = simulateTestOutcome(forceWinParam);
+            return;
+          }
           reportClientError('spin_failed', data.error || 'unknown', null, spunCustomerId);
           // Land on a random loss segment on error too. resolveLandingSegment
           // with an invalid index always substitutes from the shared loss set,
@@ -1160,6 +1247,10 @@ export default function WheelWidget({ prefillUserId = null }) {
         pendingResultRef.current = { winIndex: data.segmentIndex, data };
       })
       .catch(() => {
+        if (isTestMode) {
+          pendingResultRef.current = simulateTestOutcome(forceWinParam);
+          return;
+        }
         reportClientError('spin_network_error', 'spin request failed', null, spunCustomerId);
         // The RESPONSE was lost, not necessarily the spin — /api/spin may have
         // committed it before the connection died. Ask what happened instead of
@@ -1237,6 +1328,13 @@ export default function WheelWidget({ prefillUserId = null }) {
           return;
         }
         if (data.error) {
+          if (isTestMode) {
+            // Reviewers cannot authenticate test spins — simulate locally so
+            // wins are reviewable. Never reached by real traffic.
+            const sim = simulateTestOutcome(forceWinParam);
+            applyBoxOutcome(sim.winIndex, sim.data);
+            return;
+          }
           reportClientError('spin_failed', data.error || 'unknown', null, spunCustomerId);
           const fallback = resolveLandingSegment(-1);
           applyBoxOutcome(fallback.index, { won: false });
@@ -1246,6 +1344,11 @@ export default function WheelWidget({ prefillUserId = null }) {
         applyBoxOutcome(data.segmentIndex, data);
       })
       .catch(() => {
+        if (isTestMode) {
+          const sim = simulateTestOutcome(forceWinParam);
+          applyBoxOutcome(sim.winIndex, sim.data);
+          return;
+        }
         reportClientError('spin_network_error', 'spin request failed', null, spunCustomerId);
         landOnRecordedSpin(spunCustomerId).then(applyPending);
       });
