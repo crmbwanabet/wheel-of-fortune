@@ -367,6 +367,19 @@ function simulateTestOutcome(forceWinParam) {
   return { winIndex: resolveLandingSegment(-1).index, data: { won: false } };
 }
 
+// Casino backdrop for box days: a whisper-quiet repeating tile of card suits
+// and dots, inlined as ~1KB of SVG so it ships inside the bundle — no image
+// request, no late pop-in, crisp at any pixel density. Opacities are kept
+// around 5% so the motif reads as texture, never as content.
+const SUIT_TILE = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cpath d='M24 14l5.5 8-5.5 8-5.5-8z' fill='rgba(255,215,0,0.055)'/%3E%3Cpath d='M70 52c4 5 8 7.5 8 11.5a4 4 0 0 1-7 2.6 10 10 0 0 0 1.6 4.9h-5.2a10 10 0 0 0 1.6-4.9 4 4 0 0 1-7-2.6c0-4 4-6.5 8-11.5z' fill='rgba(255,255,255,0.045)'/%3E%3Ccircle cx='72' cy='18' r='1.6' fill='rgba(255,255,255,0.05)'/%3E%3Ccircle cx='20' cy='72' r='1.6' fill='rgba(255,215,0,0.05)'/%3E%3C/svg%3E\")";
+const CABINET_GRADIENT = 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)';
+const BOX_CARD_BACKGROUND = [
+  'radial-gradient(120% 80% at 50% 0%, rgba(255,215,0,0.06), transparent 55%)',
+  'radial-gradient(150% 120% at 50% 55%, transparent 60%, rgba(0,0,0,0.38) 100%)',
+  SUIT_TILE,
+  CABINET_GRADIENT,
+].join(', ');
+
 // Chip and reveal colours per prize, matching the wheel's slice palette so
 // the boxes read as the same machine.
 const PRIZE_STYLE = {
@@ -1737,7 +1750,11 @@ export default function WheelWidget({ prefillUserId = null }) {
       {/* ============================================================ */}
       <div className="relative rounded-2xl" style={{
         width: 380, maxWidth: '95vw',
-        background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
+        // Box days get the quiet casino backdrop (suit tile + glow +
+        // vignette, all inline — see BOX_CARD_BACKGROUND); wheel days keep
+        // the plain cabinet exactly as approved.
+        background: game === 'box' ? BOX_CARD_BACKGROUND : CABINET_GRADIENT,
+        ...(game === 'box' ? { backgroundSize: 'auto, auto, 96px 96px, auto' } : {}),
         boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
         border: '3px solid #3a3f52',
         ...(shaking ? { animation: 'winShake 0.15s ease-out' } : {}),
