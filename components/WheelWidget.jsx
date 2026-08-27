@@ -355,6 +355,10 @@ function simulateTestOutcome(forceWinParam) {
   const winSegs = WHEEL_SEGMENTS
     .map((s, i) => ({ s, i }))
     .filter((x) => !x.s.isLoss && x.s.prize);
+  // forceWin=0 forces a LOSS — the deterministic way to review the loss screen.
+  if (forceWinParam === '0') {
+    return { winIndex: resolveLandingSegment(-1).index, data: { won: false } };
+  }
   if (forceWinParam) {
     const want = Number(forceWinParam);
     const hit = winSegs.find((x) => x.s.prize.kwacha === want) || winSegs[0];
