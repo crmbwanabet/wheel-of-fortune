@@ -498,7 +498,7 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
   };
 
   return (
-    <div className="relative mx-auto" style={{ width: '100%', maxWidth: 370, aspectRatio: '1' }}>
+    <div className="relative mx-auto" style={{ width: '100%', maxWidth: 370, aspectRatio: '1', marginTop: 18 }}>
       {/* Spotlight, matching the wheel's */}
       <div className="absolute pointer-events-none" style={{
         inset: '-20%',
@@ -641,13 +641,14 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
         );
       })}
 
-      {/* Phase caption */}
-      <div className="absolute left-0 right-0 text-center" style={{ bottom: '-1%' }}>
+      {/* Phase caption — sits under the MYSTERY BOX header, above the boxes.
+          SHUFFLING… and PICK A BOX! share the flashing brand-yellow. */}
+      <div className="absolute left-0 right-0 text-center" style={{ top: '-4.5%' }}>
         <span className="font-black uppercase tracking-widest" style={{
           fontSize: 14,
-          color: phase === 'pick' ? '#FEF200' : 'rgba(255,255,255,0.8)',
+          color: (phase === 'pick' || phase === 'shuffle') ? '#FEF200' : 'rgba(255,255,255,0.8)',
           textShadow: '0 2px 6px rgba(0,0,0,.7)',
-          ...(phase === 'pick' && !isLowEnd ? { animation: 'stopFlash 0.5s ease-in-out infinite' } : {}),
+          ...((phase === 'pick' || phase === 'shuffle') && !isLowEnd ? { animation: 'stopFlash 0.5s ease-in-out infinite' } : {}),
         }}>{caption}</span>
       </div>
     </div>
