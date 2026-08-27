@@ -362,65 +362,53 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
   // The shuffle is deliberately UNTRACKABLE, not merely fast. Players film
   // these games; anyone who could visually follow "the K10,000 box" through
   // the shuffle and then lose after picking it would have video that looks
-  // like proof of cheating. So instead of swapping grid cells (traceable),
-  // the boxes GATHER into one overlapping pile in the centre — nine identical
-  // boxes occluding each other, which severs identity completely — churn
-  // there in a fast blur, then SCATTER back out in a fresh random order.
-  // After the pile, "which box had which prize" is not merely hard to track;
-  // it is undefined.
+  // like proof of cheating. So the boxes do not glide between grid cells
+  // (traceable): for the whole shuffle every box continuously flies to fresh
+  // random spots with a centre-heavy bias, so identical boxes cross and
+  // stack over one another dozens of times. Every occlusion severs the
+  // trail; by the scatter, "which box had which prize" is undefined.
   const [slots, setSlots] = useState(() => [0, 1, 2, 3, 4, 5, 6, 7, 8]);
-  const [mode, setMode] = useState('grid'); // grid | gather | swirl | scatter
+  const [mode, setMode] = useState('grid'); // grid | chaos | scatter
   const [jitter, setJitter] = useState(null); // per-box {x,y,z} while swirling
   useEffect(() => {
     if (phase === 'intro') { setSlots([0, 1, 2, 3, 4, 5, 6, 7, 8]); setMode('grid'); }
     if (phase === 'pick') setMode('grid');
     if (phase !== 'shuffle') return undefined;
-    // Three acts inside the 4s window: visible grid swaps first (reads as
-    // shuffling), then the identity-destroying pile, then the scatter.
-    let swapIv = null, swirlIv = null;
-    setMode('grid');
-    swapIv = setInterval(() => {
-      setSlots((prev) => {
-        const next = prev.slice();
-        const a = Math.floor(Math.random() * 9);
-        let b = Math.floor(Math.random() * 9);
-        if (b === a) b = (b + 1) % 9;
-        const t = next[a]; next[a] = next[b]; next[b] = t;
-        return next;
-      });
-    }, isLowEnd ? 220 : 130);
-    const swirlMs = isLowEnd ? 140 : 80;
-    const t0 = setTimeout(() => { if (swapIv) { clearInterval(swapIv); swapIv = null; } setMode('gather'); }, 1300);
-    const t1 = setTimeout(() => {
-      setMode('swirl');
-      swirlIv = setInterval(() => {
-        setJitter(Array.from({ length: 9 }, () => ({
-          x: (Math.random() - 0.5) * 22,
-          y: (Math.random() - 0.5) * 20,
-          z: 1 + Math.floor(Math.random() * 9),
-        })));
-      }, swirlMs);
-    }, 1800);
-    const t2 = setTimeout(() => {
-      if (swirlIv) clearInterval(swirlIv);
+    // One continuous chaos: every tick, every box flies to a fresh random
+    // spot anywhere on the stage, with positions biased toward the centre so
+    // paths constantly cross and boxes constantly stack over one another.
+    // The wide travel reads as vigorous shuffling; the perpetual occlusion is
+    // what makes the motion untrackable on a recording — identical boxes
+    // overlap dozens of times, and each overlap severs the trail.
+    let iv = null;
+    const chaosTick = () => {
+      setJitter(Array.from({ length: 9 }, () => ({
+        // (random-0.5)*2 * random  -> ±1 with a centre-heavy distribution
+        x: (Math.random() - 0.5) * 2 * Math.random() * 33,
+        y: (Math.random() - 0.5) * 2 * Math.random() * 30,
+        z: 1 + Math.floor(Math.random() * 9),
+      })));
+    };
+    setMode('chaos');
+    chaosTick();
+    iv = setInterval(chaosTick, isLowEnd ? 220 : 130);
+    const t = setTimeout(() => {
+      clearInterval(iv);
+      iv = null;
       // Fresh random arrangement on the way out — the exit order shares
       // nothing with the entry order.
       setSlots((prev) => {
         const next = prev.slice();
         for (let j = next.length - 1; j > 0; j--) {
           const k = Math.floor(Math.random() * (j + 1));
-          const t = next[j]; next[j] = next[k]; next[k] = t;
+          const t2 = next[j]; next[j] = next[k]; next[k] = t2;
         }
         return next;
       });
       setJitter(null);
       setMode('scatter');
     }, 3400);
-    return () => {
-      clearTimeout(t0); clearTimeout(t1); clearTimeout(t2);
-      if (swapIv) clearInterval(swapIv);
-      if (swirlIv) clearInterval(swirlIv);
-    };
+    return () => { clearTimeout(t); if (iv) clearInterval(iv); };
   }, [phase, isLowEnd]);
 
   const caption = phase === 'intro' ? 'THE PRIZES GO INTO THE BOXES…'
@@ -456,14 +444,11 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
         let left = 2.5 + col * 33.5, top = 7 + row * 30;
         let trans = 'left 0.14s ease-in-out, top 0.14s ease-in-out';
         let z = isChosen ? 3 : 1;
-        if (mode === 'gather') {
-          left = 35.5; top = 37;
-          trans = 'left 0.45s ease-in, top 0.45s ease-in';
-          z = (id * 7) % 9 + 1;
-        } else if (mode === 'swirl') {
+        if (mode === 'chaos') {
           const j = (jitter && jitter[id]) || { x: 0, y: 0, z: 1 };
-          left = 35.5 + j.x; top = 37 + j.y;
-          trans = 'left 0.08s linear, top 0.08s linear';
+          left = Math.max(2, Math.min(69, 35.5 + j.x));
+          top = Math.max(6, Math.min(66, 37 + j.y));
+          trans = 'left 0.13s ease-in-out, top 0.13s ease-in-out';
           z = j.z;
         } else if (mode === 'scatter') {
           trans = 'left 0.5s cubic-bezier(.2,.8,.3,1), top 0.5s cubic-bezier(.2,.8,.3,1)';
