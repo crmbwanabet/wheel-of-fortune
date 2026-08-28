@@ -149,7 +149,8 @@ body {
 @keyframes bwTickerIn { from { opacity: 0.1; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 
 /* Mystery box game (WheelWidget) */
-@keyframes bwBoxDrop { 0% { opacity: 0; transform: translate(-50%, -30px); } 20% { opacity: 1; transform: translate(-50%, -22px); } 70% { opacity: 1; transform: translate(-50%, 2px); } 100% { opacity: 0; transform: translate(-50%, 18px) scale(0.4); } }
+@keyframes bwBoxDropStay { 0% { opacity: 0; transform: translate(-50%, -30px); } 30% { opacity: 1; transform: translate(-50%, -20px); } 75% { transform: translate(-50%, 3px); } 100% { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes bwBoxSink { 0% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, 18px) scale(0.35); } }
 @keyframes bwBoxPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
 @keyframes bwBoxWobble { 0%, 100% { transform: rotate(0deg); } 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }
 @keyframes bwBoxPop { from { transform: translateX(-50%) scale(0.3); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }

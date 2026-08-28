@@ -575,7 +575,7 @@ function BoxSVG({ open, isWin, sparkle }) {
   );
 }
 
-function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
+function MysteryBoxStage({ phase, chosen, reveal, onPick, onShuffle, isLowEnd }) {
   // slots[slotIndex] = box id occupying that grid cell.
   //
   // The shuffle is deliberately UNTRACKABLE, not merely fast. Players film
@@ -656,7 +656,8 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
     return () => { active = false; if (raf) cancelAnimationFrame(raf); };
   }, [phase, isLowEnd]);
 
-  const caption = phase === 'intro' ? 'THE PRIZES GO INTO THE BOXES…'
+  const caption = phase === 'intro' ? 'TODAY’S PRIZES!'
+    : phase === 'sink' ? 'THE PRIZES GO INTO THE BOXES…'
     : phase === 'shuffle' ? 'SHUFFLING…'
     : phase === 'pick' ? 'PICK A BOX!'
     : phase === 'opening' ? 'OPENING…'
@@ -716,12 +717,15 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
               ...(revealed && !isChosen ? { opacity: 0.55 } : {}),
               transition: 'transform 0.25s ease-out, opacity 0.25s ease-out',
             }}>
-              {/* Prize chip dropping in during the intro, coloured like its wheel slice */}
-              {phase === 'intro' && (
+              {/* Prize chip, coloured like its wheel slice: drops onto the box
+                  and SITS there until the shuffle button sinks it inside. */}
+              {(phase === 'intro' || phase === 'ready' || phase === 'sink') && (
                 <div style={{
-                  position: 'absolute', left: '50%', top: -8, zIndex: 4,
-                  animation: `bwBoxDrop 1.4s ${(id % 9) * 0.06}s ease-in both`,
-                  ...prizeChipStyle(BOX_LABELS[id], 14),
+                  position: 'absolute', left: '50%', top: -10, zIndex: 4,
+                  animation: phase === 'sink'
+                    ? `bwBoxSink 0.5s ${(id % 3) * 0.07}s ease-in both`
+                    : `bwBoxDropStay 0.9s ${(id % 9) * 0.06}s ease-out both`,
+                  ...prizeChipStyle(BOX_LABELS[id], 17),
                 }}>{BOX_LABELS[id]}</div>
               )}
 
@@ -761,14 +765,31 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
       })}
 
       {/* Phase caption — sits under the MYSTERY BOX header, above the boxes.
-          SHUFFLING… and PICK A BOX! share the flashing brand-yellow. */}
-      <div className="absolute left-0 right-0 text-center" style={{ top: '-4.5%' }}>
+          While the prizes are on show it becomes the SHUFFLE button (owner
+          spec: the player starts the shuffle themselves, so they get all the
+          time they want to read the prizes). Styled like the PLAY! button. */}
+      <div className="absolute left-0 right-0 text-center" style={{ top: '-5%', zIndex: 6 }}>
+        {phase === 'ready' ? (
+          <button
+            type="button"
+            onClick={onShuffle}
+            className="font-black uppercase rounded-xl transition-all hover:scale-[1.04] active:scale-95"
+            style={{
+              fontSize: 15, padding: '7px 26px', color: '#fff', border: 0,
+              background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+              boxShadow: '0 4px 14px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.35)',
+              letterSpacing: '0.05em', cursor: 'pointer',
+              ...(isLowEnd ? {} : { animation: 'playBtnPulse 2.4s ease-in-out infinite' }),
+            }}
+          >SHUFFLE THE BOXES!</button>
+        ) : (
         <span className="font-black uppercase tracking-widest" style={{
           fontSize: 14,
           color: (phase === 'pick' || phase === 'shuffle') ? '#FEF200' : 'rgba(255,255,255,0.8)',
           textShadow: '0 2px 6px rgba(0,0,0,.7)',
           ...((phase === 'pick' || phase === 'shuffle') && !isLowEnd ? { animation: 'stopFlash 0.5s ease-in-out infinite' } : {}),
         }}>{caption}</span>
+        )}
       </div>
     </div>
   );
@@ -1290,13 +1311,22 @@ export default function WheelWidget({ prefillUserId = null }) {
       setChosenBox(null);
       setBoxReveal(null);
       setScreen('boxes');
+      // The prizes drop onto the boxes and STAY until the player presses the
+      // shuffle button (owner spec: give them time to actually read what is
+      // in play). No auto-advance past 'ready'.
       setBoxPhase('intro');
-      setTimeout(() => setBoxPhase('shuffle'), 1800);
-      setTimeout(() => setBoxPhase('pick'), 5800); // 1.8s intro + the 4s shuffle
+      setTimeout(() => setBoxPhase('ready'), 2000);
       return;
     }
     setScreen('spinning');
   }, [game]);
+
+  // The shuffle button: chips sink into the boxes, then the whirl, then pick.
+  const startShuffle = useCallback(() => {
+    setBoxPhase('sink');
+    setTimeout(() => setBoxPhase('shuffle'), 550);
+    setTimeout(() => setBoxPhase('pick'), 4550); // 0.55s sink + the 4s shuffle
+  }, []);
 
   // Land the wheel on the spin the SERVER actually recorded.
   //
@@ -1988,7 +2018,7 @@ export default function WheelWidget({ prefillUserId = null }) {
 
           {/* ============ GAME AREA — today's game per lib/gameRotation ============ */}
           {game === 'box' ? (
-          <MysteryBoxStage phase={boxPhase} chosen={chosenBox} reveal={boxReveal} onPick={chooseBox} isLowEnd={isLowEnd} />
+          <MysteryBoxStage phase={boxPhase} chosen={chosenBox} reveal={boxReveal} onPick={chooseBox} onShuffle={startShuffle} isLowEnd={isLowEnd} />
           ) : (
           <div className="relative mx-auto" style={{ width: '100%', maxWidth: WHEEL_SIZE + 50, aspectRatio: '1' }}>
 
