@@ -153,10 +153,11 @@ body {
 @keyframes bwBoxPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
 @keyframes bwBoxWobble { 0%, 100% { transform: rotate(0deg); } 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }
 @keyframes bwBoxPop { from { transform: translateX(-50%) scale(0.3); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
-/* Chest reveal: the front lid folds down onto the seam, then the inner face
-   rises behind the body — a 2D stand-in for the lid swinging back. Coins
-   fly out along per-coin --fly vectors. */
-@keyframes bwChestLidFront { 0% { transform: scaleY(1); } 50% { transform: scaleY(0.05); } 55%, 100% { transform: scaleY(0.05); opacity: 0; } }
-@keyframes bwChestLidBack { 0%, 48% { transform: scaleY(0.05); opacity: 0; } 58% { opacity: 1; } 80% { transform: scaleY(1.05); } 100% { transform: scaleY(0.96); opacity: 1; } }
-@keyframes bwChestMouth { 0%, 50% { opacity: 0; } 75%, 100% { opacity: 1; } }
-@keyframes bwCoinFly { 0%, 55% { transform: translate(0, 5px) scale(0.2); opacity: 0; } 68% { opacity: 1; } 100% { transform: var(--fly, translate(0, -24px)) scale(1); opacity: 1; } }
+/* Box reveal (owner-approved A1, 2026-08-28): the lid pops up and off with
+   a tilt, gold light and coins burst from the opening, the prize chip lands
+   with a small overshoot. Coins fly along per-coin --fly vectors. */
+@keyframes bwLidFly { 0% { transform: translate(0, 0) rotate(0deg); } 60% { transform: translate(10%, -44%) rotate(-13deg); } 100% { transform: translate(9%, -40%) rotate(-12deg); } }
+@keyframes bwBoxMouth { 0% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes bwCoinFly { 0% { transform: translate(0, 5px) scale(0.25); opacity: 0; } 25% { opacity: 1; } 100% { transform: var(--fly, translate(0, -24px)) scale(1); opacity: 1; } }
+@keyframes bwChipPop { 0% { transform: translateX(-50%) scale(0.3); opacity: 0; } 60% { transform: translateX(-50%) scale(1.12); opacity: 1; } 100% { transform: translateX(-50%) scale(1); opacity: 1; } }
+@keyframes bwSpk { 0%, 100% { opacity: 0.15; transform: scale(0.6); } 50% { opacity: 1; transform: scale(1.1); } }

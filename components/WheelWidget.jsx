@@ -439,120 +439,131 @@ function prizeChipStyle(label, fontSize, extra) {
 //   opening — chosen box wobbles while /api/spin answers
 //   reveal  — chosen box opens on the result; the others show the rest
 // ============================================================================
-// Hand-drawn SVG treasure chest, modelled on the owner's approved Grok
-// render: oak planks with knots, arched barrel lid, gold bands with rivets,
-// corner caps, hasp plate and hanging padlock, 3/4 view facing right. Drawn
-// in code (not the bitmap) so the lid genuinely OPENS on the reveal: the
-// front lid folds down onto the seam while the inner face rises behind the
-// body — gold light and coins spill out on a win, an empty dark mouth on a
-// loss. The nine copies share gradient ids; they are identical, so every
-// url(#…) resolving to the first copy renders correctly.
-function ChestSVG({ open, isWin }) {
-  const hinge = { transformBox: 'fill-box', transformOrigin: '50% 100%' };
+// The mystery box art: the owner-approved "A1 Polished" 3D gift box
+// (picked from the design page 2026-08-28). Glossy gold with the red ribbon
+// the trigger icon already uses, drawn with real depth: a receding side
+// wall, a lid with a visible top surface, ribbon wrapped over every face,
+// a folded bow with tails, twin gloss streaks and static sparkles. Body and
+// lid are separate layers so the reveal can fly the lid up and off; gold
+// light and a heap of coins burst from the opening on a win, a dark empty
+// mouth on a loss. The nine copies share gradient ids; they are identical,
+// so every url(#...) resolving to the first copy renders correctly.
+function BoxSVG({ open, isWin, sparkle }) {
+  const svgStyle = { position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', display: 'block' };
+  const spk = (d, delay) => (
+    <path
+      d={d}
+      fill="#fffbe6"
+      opacity="0.5"
+      style={sparkle ? { transformBox: 'fill-box', transformOrigin: '50% 50%', animation: `bwSpk 2.3s ${delay} ease-in-out infinite` } : undefined}
+    />
+  );
   return (
-    <svg
-      viewBox="0 0 140 122"
-      aria-hidden="true"
-      style={{ position: 'absolute', left: '-3%', top: '-1%', width: '106%', height: '102%' }}
-    >
-      <defs>
-        <linearGradient id="bwcWood" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ad7440" /><stop offset="0.55" stopColor="#855126" /><stop offset="1" stopColor="#5a3517" />
-        </linearGradient>
-        <linearGradient id="bwcSide" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#6b3f1c" /><stop offset="1" stopColor="#472910" />
-        </linearGradient>
-        <linearGradient id="bwcLid" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#c08a4d" /><stop offset="0.5" stopColor="#96602c" /><stop offset="1" stopColor="#6b3f1c" />
-        </linearGradient>
-        <linearGradient id="bwcSideLid" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#6b3f1c" /><stop offset="1" stopColor="#3d220d" />
-        </linearGradient>
-        <linearGradient id="bwcInner" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#4a2c12" /><stop offset="1" stopColor="#2e1a0a" />
-        </linearGradient>
-        <linearGradient id="bwcGold" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ffe98a" /><stop offset="0.55" stopColor="#d4a017" /><stop offset="1" stopColor="#8a6d1f" />
-        </linearGradient>
-        <linearGradient id="bwcGoldV" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#8a6d1f" /><stop offset="0.3" stopColor="#e8c04a" /><stop offset="0.5" stopColor="#ffd76a" />
-          <stop offset="0.7" stopColor="#e8c04a" /><stop offset="1" stopColor="#8a6d1f" />
-        </linearGradient>
-        <radialGradient id="bwcRivet" cx="0.35" cy="0.3" r="0.9">
-          <stop offset="0" stopColor="#fff6c9" /><stop offset="0.45" stopColor="#ffd700" /><stop offset="1" stopColor="#8a6d1f" />
-        </radialGradient>
-        <radialGradient id="bwcGlow">
-          <stop offset="0" stopColor="#fff6c9" /><stop offset="0.4" stopColor="rgba(255,215,0,0.85)" /><stop offset="0.78" stopColor="rgba(255,215,0,0)" />
-        </radialGradient>
-        <radialGradient id="bwcCoin" cx="0.35" cy="0.3" r="0.95">
-          <stop offset="0" stopColor="#fff3b0" /><stop offset="0.55" stopColor="#ffd700" /><stop offset="1" stopColor="#b8860b" />
-        </radialGradient>
-      </defs>
+    <div style={{ position: 'absolute', left: '-3%', top: '-1%', width: '106%', height: '102%', pointerEvents: 'none' }}>
+      <svg viewBox="0 0 120 116" aria-hidden="true" style={svgStyle}>
+        <defs>
+          <linearGradient id="bwbFront" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#fde047" /><stop offset="0.55" stopColor="#eab308" /><stop offset="1" stopColor="#a16207" />
+          </linearGradient>
+          <linearGradient id="bwbSide" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#ca8a04" /><stop offset="1" stopColor="#7c4a0a" />
+          </linearGradient>
+          <linearGradient id="bwbLidF" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#fef9c3" /><stop offset="0.5" stopColor="#fde047" /><stop offset="1" stopColor="#eab308" />
+          </linearGradient>
+          <linearGradient id="bwbLidT" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#fffbe6" /><stop offset="1" stopColor="#fde68a" />
+          </linearGradient>
+          <linearGradient id="bwbLidS" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#eab308" /><stop offset="1" stopColor="#a16207" />
+          </linearGradient>
+          <linearGradient id="bwbRibF" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#f87171" /><stop offset="0.5" stopColor="#dc2626" /><stop offset="1" stopColor="#991b1b" />
+          </linearGradient>
+          <linearGradient id="bwbRibD" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#b91c1c" /><stop offset="1" stopColor="#7f1d1d" />
+          </linearGradient>
+          <linearGradient id="bwbRibT" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ef4444" /><stop offset="1" stopColor="#b91c1c" />
+          </linearGradient>
+          <radialGradient id="bwbCoin" cx="0.35" cy="0.3" r="0.95">
+            <stop offset="0" stopColor="#fff3b0" /><stop offset="0.55" stopColor="#ffd700" /><stop offset="1" stopColor="#b8860b" />
+          </radialGradient>
+          <radialGradient id="bwbGlow">
+            <stop offset="0" stopColor="#fff6c9" /><stop offset="0.45" stopColor="rgba(255,215,0,0.9)" /><stop offset="0.8" stopColor="rgba(255,215,0,0)" />
+          </radialGradient>
+        </defs>
 
-      {/* Inner lid face — rises to stand open behind the body */}
-      <g style={open ? { ...hinge, animation: 'bwChestLidBack 0.7s ease-out both' } : { opacity: 0 }}>
-        <path d="M14,58 V44 C14,20 32,14 53,14 C74,14 92,20 92,44 V58 Z" fill="url(#bwcInner)" stroke="#1f1206" strokeWidth="1.5" />
-        <path d="M14,56 V44 C14,20 32,14 53,14 C74,14 92,20 92,44 V56" fill="none" stroke="#d4a017" strokeWidth="2" opacity="0.5" />
-      </g>
+        {/* open top: dark interior; glow + coin heap fade in on a win */}
+        <path d="M10,42 L34,34 L110,34 L86,42 Z" fill="#170c03" />
+        {open && isWin && (
+          <g style={{ animation: 'bwBoxMouth 0.5s 0.3s ease-out both' }}>
+            <ellipse cx="58" cy="38" rx="40" ry="6.5" fill="url(#bwbGlow)" />
+            <circle cx="46" cy="38" r="5.5" fill="url(#bwbCoin)" stroke="#7a5a10" strokeWidth="1.3" />
+            <circle cx="60" cy="36.5" r="5.5" fill="url(#bwbCoin)" stroke="#7a5a10" strokeWidth="1.3" />
+            <circle cx="73" cy="38" r="5.5" fill="url(#bwbCoin)" stroke="#7a5a10" strokeWidth="1.3" />
+          </g>
+        )}
 
-      {/* Treasure light in the mouth (win only) — the body front clips it,
-          so it reads as coming from inside */}
-      {open && isWin && (
-        <ellipse cx="53" cy="56" rx="45" ry="11" fill="url(#bwcGlow)"
-          style={{ animation: 'bwChestMouth 0.7s ease-out both' }} />
-      )}
+        {/* side wall + wrapped ribbon */}
+        <path d="M86,42 L110,34 L110,96 L86,104 Z" fill="url(#bwbSide)" />
+        <path d="M86,64 L110,56 L110,72 L86,80 Z" fill="url(#bwbRibD)" />
+        <path d="M86,42 L110,34 L110,96 L86,104 Z" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
 
-      {/* Body */}
-      <path d="M96,58 L126,50 L126,98 L96,106 Z" fill="url(#bwcSide)" />
-      <path d="M96,74 L126,66 M96,90 L126,82" stroke="rgba(0,0,0,0.3)" strokeWidth="1.4" fill="none" />
-      <path d="M100,104 L128,96 L128,102 L100,112 Z" fill="#331c09" />
-      <rect x="6" y="104" width="94" height="10" rx="2" fill="#543113" stroke="#331c09" strokeWidth="1" />
-      <rect x="10" y="58" width="86" height="48" fill="url(#bwcWood)" />
-      <path d="M10,74 H96 M10,90 H96" stroke="rgba(0,0,0,0.3)" strokeWidth="1.4" />
-      <path d="M10,75.5 H96" stroke="rgba(255,240,200,0.08)" strokeWidth="1" />
-      <ellipse cx="56" cy="81" rx="3" ry="2" fill="#5a3517" stroke="#3d220d" strokeWidth="0.8" />
-      <ellipse cx="24" cy="97" rx="2.2" ry="1.5" fill="#5a3517" stroke="#3d220d" strokeWidth="0.8" />
-      <rect x="26" y="58" width="12" height="48" fill="url(#bwcGoldV)" />
-      <rect x="68" y="58" width="12" height="48" fill="url(#bwcGoldV)" />
-      <circle cx="32" cy="66" r="2.2" fill="url(#bwcRivet)" /><circle cx="32" cy="84" r="2.2" fill="url(#bwcRivet)" /><circle cx="32" cy="100" r="2.2" fill="url(#bwcRivet)" />
-      <circle cx="76" cy="66" r="2.2" fill="url(#bwcRivet)" /><circle cx="76" cy="84" r="2.2" fill="url(#bwcRivet)" /><circle cx="76" cy="100" r="2.2" fill="url(#bwcRivet)" />
-      <path d="M10,92 h9 v7 h7 v7 H10 Z" fill="url(#bwcGold)" stroke="#7a5a10" strokeWidth="0.8" />
-      <path d="M96,92 h-9 v7 h-7 v7 h16 Z" fill="url(#bwcGold)" stroke="#7a5a10" strokeWidth="0.8" />
-      <circle cx="14.5" cy="102" r="1.6" fill="url(#bwcRivet)" /><circle cx="91.5" cy="102" r="1.6" fill="url(#bwcRivet)" />
+        {/* front face: seam shadow under the lid, twin gloss, ribbon */}
+        <rect x="10" y="42" width="76" height="62" rx="3.5" fill="url(#bwbFront)" />
+        <rect x="10" y="42" width="76" height="62" rx="3.5" fill="none" stroke="rgba(0,0,0,0.18)" strokeWidth="1" />
+        <rect x="10" y="46" width="76" height="4.5" fill="rgba(0,0,0,0.14)" />
+        <path d="M17,50 L27,50 L23,96 L13,96 Z" fill="rgba(255,255,255,0.3)" />
+        <path d="M30,52 L34,52 L31.5,84 L27.5,84 Z" fill="rgba(255,255,255,0.18)" />
+        <rect x="41" y="42" width="14" height="62" fill="url(#bwbRibF)" />
+        <path d="M45,42 h2 v62 h-2 Z" fill="rgba(255,255,255,0.3)" />
+        <rect x="10" y="98" width="76" height="6" rx="3" fill="rgba(0,0,0,0.22)" />
+        {spk('M76,54.7 L76.99,57.01 L79,58 L76.99,58.99 L76,61.3 L75.01,58.99 L73,58 L75.01,57.01 Z', '0s')}
+        {spk('M21,71.6 L21.72,73.28 L23.4,74 L21.72,74.72 L21,76.4 L20.28,74.72 L18.6,74 L20.28,73.28 Z', '0.9s')}
 
-      {/* Front lid — folds shut onto the seam when opening */}
-      <g style={open ? { ...hinge, animation: 'bwChestLidFront 0.7s ease-in both' } : undefined}>
-        <path d="M96,58 L126,50 L126,36 C126,16 104,10 84,10 C93,15 96,27 96,42 Z" fill="url(#bwcSideLid)" />
-        <path d="M10,58 V42 C10,16 30,10 53,10 C76,10 96,16 96,42 V58 Z" fill="url(#bwcLid)" />
-        <path d="M14,44 C14,20 32,15 53,15" fill="none" stroke="rgba(255,240,200,0.25)" strokeWidth="2" />
-        <path d="M45,57 V12.5 M61,57 V12.5" stroke="rgba(0,0,0,0.22)" strokeWidth="1.4" />
-        <rect x="26" y="13" width="12" height="45" rx="5" fill="url(#bwcGoldV)" />
-        <rect x="68" y="13" width="12" height="45" rx="5" fill="url(#bwcGoldV)" />
-        <circle cx="32" cy="23" r="2.2" fill="url(#bwcRivet)" /><circle cx="32" cy="41" r="2.2" fill="url(#bwcRivet)" />
-        <circle cx="74" cy="23" r="2.2" fill="url(#bwcRivet)" /><circle cx="74" cy="41" r="2.2" fill="url(#bwcRivet)" />
-        <path d="M98,54 L128,46 L128,52 L98,60 Z" fill="#b8901c" />
-        <rect x="8" y="54" width="90" height="7" rx="2" fill="url(#bwcGold)" stroke="#7a5a10" strokeWidth="0.8" />
-        <circle cx="14" cy="57.5" r="1.7" fill="url(#bwcRivet)" /><circle cx="92" cy="57.5" r="1.7" fill="url(#bwcRivet)" />
-      </g>
+        {/* coins leaping out on a win, staggered after the lid flies */}
+        {open && isWin && [
+          { cx: 42, cy: 36, r: 5.5, fly: 'translate(-22px,-30px)', d: '0.32s' },
+          { cx: 58, cy: 35, r: 5.5, fly: 'translate(2px,-38px)', d: '0.38s' },
+          { cx: 72, cy: 36, r: 5.5, fly: 'translate(20px,-26px)', d: '0.44s' },
+          { cx: 48, cy: 36, r: 4.2, fly: 'translate(-32px,-18px)', d: '0.35s' },
+          { cx: 66, cy: 36, r: 4.2, fly: 'translate(32px,-15px)', d: '0.47s' },
+        ].map((c) => (
+          <circle key={c.cx} cx={c.cx} cy={c.cy} r={c.r} fill="url(#bwbCoin)" stroke="#7a5a10" strokeWidth="1"
+            style={{ '--fly': c.fly, transformBox: 'fill-box', animation: `bwCoinFly 0.5s ${c.d} ease-out both` }} />
+        ))}
+      </svg>
 
-      {/* Hasp plate + hanging padlock — stays on the body as the lid opens */}
-      <rect x="42" y="56" width="22" height="18" rx="3" fill="url(#bwcGold)" stroke="#7a5a10" strokeWidth="1" />
-      <path d="M48.5,63 C48.5,53.5 58.5,53.5 58.5,63" fill="none" stroke="#8a6d1f" strokeWidth="5" strokeLinecap="round" />
-      <path d="M48.5,63 C48.5,53.5 58.5,53.5 58.5,63" fill="none" stroke="#e8c04a" strokeWidth="2.4" strokeLinecap="round" />
-      <rect x="45.5" y="62" width="16" height="17" rx="3.5" fill="url(#bwcGold)" stroke="#7a5a10" strokeWidth="1" />
-      <circle cx="53.5" cy="69" r="2.4" fill="#3a2306" />
-      <rect x="52.4" y="70" width="2.2" height="5.5" rx="1" fill="#3a2306" />
-
-      {/* Coins leaping out (win only) — painted last so they fly over everything */}
-      {open && isWin && [
-        { cx: 38, fly: 'translate(-16px,-30px)', d: '0s' },
-        { cx: 53, fly: 'translate(2px,-38px)', d: '0.05s' },
-        { cx: 68, fly: 'translate(17px,-26px)', d: '0.1s' },
-      ].map((c) => (
-        <circle key={c.cx} cx={c.cx} cy="54" r="5.5" fill="url(#bwcCoin)" stroke="#8a6d1f" strokeWidth="1"
-          style={{ '--fly': c.fly, transformBox: 'fill-box', animation: `bwCoinFly 0.8s ${c.d} ease-out both` }} />
-      ))}
-    </svg>
+      {/* lid layer: pops up and off on the reveal */}
+      <div style={{ position: 'absolute', inset: 0, ...(open ? { animation: 'bwLidFly 0.6s ease-out both' } : {}) }}>
+        <svg viewBox="0 0 120 116" aria-hidden="true" style={svgStyle}>
+          <path d="M5,30 L29,22 L115,22 L91,30 Z" fill="url(#bwbLidT)" />
+          <path d="M41,30 L65,22 L79,22 L55,30 Z" fill="url(#bwbRibT)" />
+          <path d="M91,30 L115,22 L115,38 L91,46 Z" fill="url(#bwbLidS)" />
+          <rect x="5" y="30" width="86" height="16" rx="2" fill="url(#bwbLidF)" />
+          <rect x="5" y="30" width="86" height="16" rx="2" fill="none" stroke="rgba(0,0,0,0.18)" strokeWidth="1" />
+          <rect x="41" y="30" width="14" height="16" fill="url(#bwbRibF)" />
+          <path d="M45,30 h2 v16 h-2 Z" fill="rgba(255,255,255,0.3)" />
+          <path d="M5,44 h86 v2 h-86 Z" fill="rgba(0,0,0,0.2)" />
+          {/* bow: shadow, tails, folded loops with highlights, knot */}
+          <ellipse cx="48" cy="24" rx="11" ry="2.4" fill="rgba(0,0,0,0.2)" />
+          <path d="M44,22 L36.5,37 L42,37 L46,27 Z" fill="url(#bwbRibD)" />
+          <path d="M52,22 L59.5,37 L54,37 L50,27 Z" fill="url(#bwbRibD)" />
+          <ellipse cx="40" cy="16" rx="9.5" ry="7" transform="rotate(-18 40 16)" fill="#dc2626" />
+          <ellipse cx="40" cy="16" rx="9.5" ry="7" transform="rotate(-18 40 16)" fill="none" stroke="#7f1d1d" strokeWidth="1.4" />
+          <ellipse cx="41.8" cy="17.4" rx="4.8" ry="3.4" transform="rotate(-18 41.8 17.4)" fill="#991b1b" opacity="0.85" />
+          <ellipse cx="37.2" cy="13.2" rx="4" ry="2.3" transform="rotate(-18 37.2 13.2)" fill="#fca5a5" opacity="0.6" />
+          <ellipse cx="56" cy="16" rx="9.5" ry="7" transform="rotate(18 56 16)" fill="#dc2626" />
+          <ellipse cx="56" cy="16" rx="9.5" ry="7" transform="rotate(18 56 16)" fill="none" stroke="#7f1d1d" strokeWidth="1.4" />
+          <ellipse cx="54.2" cy="17.4" rx="4.8" ry="3.4" transform="rotate(18 54.2 17.4)" fill="#991b1b" opacity="0.85" />
+          <ellipse cx="58.8" cy="13.2" rx="4" ry="2.3" transform="rotate(18 58.8 13.2)" fill="#fca5a5" opacity="0.6" />
+          <rect x="44.2" y="15" width="7.6" height="8.4" rx="3" fill="#dc2626" stroke="#7f1d1d" strokeWidth="1.3" />
+          <path d="M46.2,16 h1.6 v6.4 h-1.6 Z" fill="#fca5a5" opacity="0.55" />
+          {spk('M84,23.3 L84.81,25.19 L86.7,26 L84.81,26.81 L84,28.7 L83.19,26.81 L81.3,26 L83.19,25.19 Z', '1.5s')}
+        </svg>
+      </div>
+    </div>
   );
 }
 
@@ -713,8 +724,8 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
                 filter: 'blur(3px)',
               }} />
 
-              {/* The treasure chest — opens when this box is the revealed pick */}
-              <ChestSVG open={revealed && isChosen} isWin={isWinLabel} />
+              {/* The gift box — the lid flies off when this box is the revealed pick */}
+              <BoxSVG open={revealed && isChosen} isWin={isWinLabel} sparkle={phase === 'pick' && !isLowEnd} />
 
               {/* Reveal: gold burst behind the chosen box's prize, chips
                   coloured like their wheel slices everywhere */}
@@ -732,7 +743,7 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
                 <div style={{
                   position: 'absolute', left: '50%', top: isChosen ? '30%' : '40%',
                   zIndex: 5,
-                  animation: isChosen ? 'bwBoxPop 0.35s 0.35s ease-out both' : 'bwBoxPop 0.5s 0.45s ease-out both',
+                  animation: isChosen ? 'bwChipPop 0.4s 0.35s ease-out both' : 'bwBoxPop 0.5s 0.45s ease-out both',
                   ...prizeChipStyle(label, isChosen ? 19 : 12, isChosen ? { padding: '6px 14px', boxShadow: '0 4px 12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.35)' } : { opacity: 0.9 }),
                 }}>{label}</div>
               )}
