@@ -153,4 +153,10 @@ body {
 @keyframes bwBoxPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
 @keyframes bwBoxWobble { 0%, 100% { transform: rotate(0deg); } 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }
 @keyframes bwBoxPop { from { transform: translateX(-50%) scale(0.3); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
-@keyframes bwLidOpen { to { transform: translateY(-15px) rotate(-9deg); opacity: 0.85; } }
+/* Chest reveal: the front lid folds down onto the seam, then the inner face
+   rises behind the body — a 2D stand-in for the lid swinging back. Coins
+   fly out along per-coin --fly vectors. */
+@keyframes bwChestLidFront { 0% { transform: scaleY(1); } 50% { transform: scaleY(0.05); } 55%, 100% { transform: scaleY(0.05); opacity: 0; } }
+@keyframes bwChestLidBack { 0%, 48% { transform: scaleY(0.05); opacity: 0; } 58% { opacity: 1; } 80% { transform: scaleY(1.05); } 100% { transform: scaleY(0.96); opacity: 1; } }
+@keyframes bwChestMouth { 0%, 50% { opacity: 0; } 75%, 100% { opacity: 1; } }
+@keyframes bwCoinFly { 0%, 55% { transform: translate(0, 5px) scale(0.2); opacity: 0; } 68% { opacity: 1; } 100% { transform: var(--fly, translate(0, -24px)) scale(1); opacity: 1; } }
