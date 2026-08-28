@@ -626,11 +626,11 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
     let last = null;
     const t0 = performance.now();
     const R0 = 30;                         // ring radius, % of the stage
-    // ~2.5 rev/s (owner: "normal, but fast enough that no one can track it"):
-    // adjacent chests are 40° apart, so at 2.5 rev/s a 30fps recording still
-    // moves each chest ~30° per frame — most of the gap — and with the mid-spin
-    // collapse on top, no chest can be followed across frames.
-    const PEAK_RPS = isLowEnd ? 1.8 : 2.5;
+    // ~2.2 rev/s (owner asked twice for calmer; still untrackable): adjacent
+    // boxes are 40° apart, so at 2.2 rev/s a 30fps recording still moves each
+    // box ~26° per frame — most of the gap — and with the mid-spin collapse
+    // on top, no box can be followed across frames.
+    const PEAK_RPS = isLowEnd ? 1.6 : 2.2;
     const step = (now) => {
       if (!active) return;
       const t = (now - t0) / 1000;
