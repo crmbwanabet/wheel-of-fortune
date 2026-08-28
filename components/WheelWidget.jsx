@@ -291,24 +291,32 @@ function FitText({ children, max = 32, min = 13, fill = 0.9, className = '', sty
 // Low-end devices skip the rail pulse and the swap animation, matching how
 // the rest of the widget degrades.
 function WinnerTicker({ isLowEnd }) {
-  const [winner, setWinner] = useState(() => nextWinner(null));
+  // currentRef mirrors what is ON SCREEN so the loop can pick each delay from
+  // it synchronously. Deciding the delay inside the setWinner updater is a
+  // trap: React runs updaters at render time, AFTER the next timeout is
+  // scheduled, so the delay would trail the display by one line — a jackpot
+  // would hold 2s and the ordinary line after it 3s.
+  const currentRef = useRef(null);
+  const [winner, setWinner] = useState(() => {
+    const w = nextWinner(null);
+    currentRef.current = w;
+    return w;
+  });
   const [swap, setSwap] = useState(0);
   useEffect(() => {
     let timer;
     let cancelled = false;
-    let current = null;
     const loop = () => {
-      // The delay is decided by what is ON SCREEN: a jackpot line holds 1s
-      // longer than an ordinary win so the rare flash gets read.
+      // A jackpot line holds 1s longer than an ordinary win so the rare
+      // flash gets read.
       timer = setTimeout(() => {
         if (cancelled) return;
-        setWinner((w) => {
-          current = nextWinner(w.name);
-          return current;
-        });
+        const w = nextWinner(currentRef.current ? currentRef.current.name : null);
+        currentRef.current = w;
+        setWinner(w);
         setSwap((n) => n + 1);
         loop();
-      }, nextDelayMs(current));
+      }, nextDelayMs(currentRef.current));
     };
     loop();
     return () => { cancelled = true; clearTimeout(timer); };
