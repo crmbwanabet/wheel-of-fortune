@@ -592,53 +592,18 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, isLowEnd }) {
                 filter: 'blur(3px)',
               }} />
 
-              {/* The gift box: body with side shading and gloss, overhanging
-                  lid, ribbon with highlight, proper bow — the trigger icon's
-                  gold/red, rendered bigger. */}
-              <div style={{
-                position: 'absolute', left: '6%', right: '6%', top: '24%', bottom: 0,
-                background: 'linear-gradient(160deg, #fde047 0%, #eab308 45%, #ca8a04 78%, #a16207 100%)',
-                borderRadius: 6,
-                boxShadow: 'inset 0 2px 0 rgba(255,255,255,.4), inset -6px 0 10px rgba(120,60,0,.35), inset 0 -5px 0 rgba(0,0,0,.22), 0 4px 10px rgba(0,0,0,.45)',
-              }} />
-              {/* Body gloss */}
-              <div style={{
-                position: 'absolute', left: '12%', top: '30%', width: '18%', bottom: '18%',
-                background: 'linear-gradient(100deg, rgba(255,255,255,.4), rgba(255,255,255,0))',
-                borderRadius: 6, transform: 'skewX(-8deg)',
-              }} />
-              {/* Lid, overhanging the body */}
-              <div style={{
-                position: 'absolute', left: '-1%', right: '-1%', top: '13%', height: '17%',
-                background: 'linear-gradient(160deg, #fef9c3 0%, #fde047 55%, #eab308 100%)',
-                borderRadius: 5,
-                boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,.6), 0 3px 5px rgba(0,0,0,.4)',
-                ...(revealed && isChosen ? { animation: 'bwLidOpen 0.35s ease-out both' } : {}),
-              }} />
-              {/* Ribbon */}
-              <div style={{
-                position: 'absolute', left: '43%', width: '14%', top: '13%', bottom: 0,
-                background: 'linear-gradient(90deg, #b91c1c 0%, #ef4444 35%, #f87171 50%, #ef4444 65%, #b91c1c 100%)',
-                borderRadius: 2, boxShadow: '0 0 4px rgba(0,0,0,.25)',
-              }} />
-              {/* Bow loops + knot */}
-              <div style={{
-                position: 'absolute', left: '26%', top: '1%', width: '22%', height: '14%',
-                background: 'radial-gradient(circle at 35% 35%, #f87171, #dc2626 60%, #991b1b)',
-                borderRadius: '55% 55% 45% 45%', transform: 'rotate(-22deg)',
-                boxShadow: 'inset -2px -2px 3px rgba(0,0,0,.3)',
-              }} />
-              <div style={{
-                position: 'absolute', right: '26%', top: '1%', width: '22%', height: '14%',
-                background: 'radial-gradient(circle at 65% 35%, #f87171, #dc2626 60%, #991b1b)',
-                borderRadius: '55% 55% 45% 45%', transform: 'rotate(22deg)',
-                boxShadow: 'inset 2px -2px 3px rgba(0,0,0,.3)',
-              }} />
-              <div style={{
-                position: 'absolute', left: '44%', top: '6%', width: '12%', height: '9%',
-                background: 'radial-gradient(circle at 40% 35%, #f87171, #b91c1c)',
-                borderRadius: '50%', boxShadow: '0 1px 2px rgba(0,0,0,.4)',
-              }} />
+              {/* The treasure chest (owner's Grok render, cut to transparency;
+                  one file shared by all nine boxes). Sized to overflow the hit
+                  area slightly so the chests feel as big as the old gift boxes. */}
+              <img
+                src="/box/chest.webp"
+                alt=""
+                draggable={false}
+                style={{
+                  position: 'absolute', left: '-4%', top: '-2%', width: '108%', height: '104%',
+                  objectFit: 'contain', pointerEvents: 'none', userSelect: 'none',
+                }}
+              />
 
               {/* Reveal: gold burst behind the chosen box's prize, chips
                   coloured like their wheel slices everywhere */}
