@@ -793,7 +793,10 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, onShuffle, isLowEnd })
             className="font-black uppercase rounded-xl transition-all hover:scale-[1.04] active:scale-95"
             style={{
               fontSize: 15, padding: '9px 22px', color: '#fff', border: 0,
-              background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+              // Green, and the same green as CLAIM PRIZE! (green-500 →
+              // emerald-600) so the widget's two "go" buttons match. Gold
+              // stays reserved for prizes.
+              background: 'linear-gradient(135deg, #22c55e, #059669)',
               boxShadow: '0 6px 18px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.35)',
               letterSpacing: '0.05em', cursor: 'pointer', whiteSpace: 'nowrap',
               ...(isLowEnd ? {} : { animation: 'playBtnPulse 2.4s ease-in-out infinite' }),
