@@ -16,6 +16,7 @@ import { reportError } from '@/lib/telemetry';
 import { checkDepositEligibility } from '@/lib/depositCheck';
 import { resolveCooldownDays } from '@/lib/cooldown';
 import { resolveWinsDisabled, shouldRunDepositGate } from '@/lib/killSwitch';
+import { gameForWheelDay } from '@/lib/gameRotation';
 
 // Colocate with the Supabase database (eu-west-1 / Dublin) to remove
 // cross-region round trips from every query on the hot path.
@@ -253,6 +254,11 @@ async function handleSpin(request) {
         // Keys the delivery-guarantee outbox; /api/notify-sweep re-sends
         // anything Telegram rejects until it lands.
         dayDate,
+        // Which game the player actually played, so the group message names it.
+        // Derived from the wheel-day here rather than taken from the request:
+        // the widget's ?game= override is a testing affordance and must not be
+        // able to mislabel a real payout.
+        game: gameForWheelDay(dayDate),
       }).then((delivered) => {
         if (!delivered) {
           // The DB row is the payout record the ops group never received.

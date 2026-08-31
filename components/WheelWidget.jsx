@@ -10,6 +10,7 @@ import { computeLanding } from '@/lib/wheelLanding';
 import { resolveLandingSegment } from '@/lib/landingSegment';
 import { msUntilNextWheelReset, splitCountdown } from '@/lib/countdown';
 import { nextWinner, nextDelayMs } from '@/lib/winnerTicker';
+import { resolveGame, BOX_LABELS, boxDecoys } from '@/lib/gameRotation';
 
 // ============================================================================
 // DATA — 14 segments: six real prizes on even indices 0..10 in ascending
@@ -290,18 +291,32 @@ function FitText({ children, max = 32, min = 13, fill = 0.9, className = '', sty
 // Low-end devices skip the rail pulse and the swap animation, matching how
 // the rest of the widget degrades.
 function WinnerTicker({ isLowEnd }) {
-  const [winner, setWinner] = useState(() => nextWinner(null));
+  // currentRef mirrors what is ON SCREEN so the loop can pick each delay from
+  // it synchronously. Deciding the delay inside the setWinner updater is a
+  // trap: React runs updaters at render time, AFTER the next timeout is
+  // scheduled, so the delay would trail the display by one line — a jackpot
+  // would hold 2s and the ordinary line after it 3s.
+  const currentRef = useRef(null);
+  const [winner, setWinner] = useState(() => {
+    const w = nextWinner(null);
+    currentRef.current = w;
+    return w;
+  });
   const [swap, setSwap] = useState(0);
   useEffect(() => {
     let timer;
     let cancelled = false;
     const loop = () => {
+      // A jackpot line holds 1s longer than an ordinary win so the rare
+      // flash gets read.
       timer = setTimeout(() => {
         if (cancelled) return;
-        setWinner((w) => nextWinner(w.name));
+        const w = nextWinner(currentRef.current ? currentRef.current.name : null);
+        currentRef.current = w;
+        setWinner(w);
         setSwap((n) => n + 1);
         loop();
-      }, nextDelayMs());
+      }, nextDelayMs(currentRef.current));
     };
     loop();
     return () => { cancelled = true; clearTimeout(timer); };
@@ -340,6 +355,455 @@ function WinnerTicker({ isLowEnd }) {
           </span>!
         </FitText>
       </div>
+    </div>
+  );
+}
+
+// Test-mode-only simulated outcome. Browser test spins cannot authenticate
+// (the test token is a server secret), so /api/spin always rejects them and
+// every reviewer used to see a scripted loss — wins were unreviewable. In
+// test mode the outcome is synthesised locally instead: ?forceWin=<amount>
+// picks that exact prize, otherwise 50/50 win/loss across the real prizes.
+// Real traffic never reaches this path.
+function simulateTestOutcome(forceWinParam) {
+  const winSegs = WHEEL_SEGMENTS
+    .map((s, i) => ({ s, i }))
+    .filter((x) => !x.s.isLoss && x.s.prize);
+  // forceWin=0 forces a LOSS — the deterministic way to review the loss screen.
+  if (forceWinParam === '0') {
+    return { winIndex: resolveLandingSegment(-1).index, data: { won: false } };
+  }
+  if (forceWinParam) {
+    const want = Number(forceWinParam);
+    const hit = winSegs.find((x) => x.s.prize.kwacha === want) || winSegs[0];
+    return { winIndex: hit.i, data: { won: true, prize: { kwacha: hit.s.prize.kwacha } } };
+  }
+  if (Math.random() < 0.5) {
+    const hit = winSegs[Math.floor(Math.random() * winSegs.length)];
+    return { winIndex: hit.i, data: { won: true, prize: { kwacha: hit.s.prize.kwacha } } };
+  }
+  return { winIndex: resolveLandingSegment(-1).index, data: { won: false } };
+}
+
+// Casino backdrop for box days: a whisper-quiet repeating tile of card suits
+// and dots, inlined as ~1KB of SVG so it ships inside the bundle — no image
+// request, no late pop-in, crisp at any pixel density. Opacities are kept
+// around 5% so the motif reads as texture, never as content.
+const SUIT_TILE = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cpath d='M30 16l8 12-8 12-8-12z' fill='rgba(255,215,0,0.11)'/%3E%3Cpath d='M94 30c-6-8-15-4-15 2.5 0 6.5 15 15.5 15 15.5s15-9 15-15.5c0-6.5-9-10.5-15-2.5z' fill='rgba(239,68,68,0.10)'/%3E%3Cpath d='M34 84c5.5 7 11 10 11 15.5a5.5 5.5 0 0 1-9.6 3.6 13 13 0 0 0 2.1 6.4h-7a13 13 0 0 0 2.1-6.4 5.5 5.5 0 0 1-9.6-3.6c0-5.5 5.5-8.5 11-15.5z' fill='rgba(255,255,255,0.09)'/%3E%3Cg fill='rgba(255,255,255,0.08)'%3E%3Ccircle cx='98' cy='92' r='6'/%3E%3Ccircle cx='91' cy='101' r='6'/%3E%3Ccircle cx='105' cy='101' r='6'/%3E%3Crect x='96.5' y='102' width='3' height='10' rx='1'/%3E%3C/g%3E%3Ccircle cx='94' cy='64' r='1.8' fill='rgba(255,215,0,0.09)'/%3E%3Ccircle cx='30' cy='56' r='1.8' fill='rgba(255,255,255,0.08)'/%3E%3C/svg%3E\")";
+const WM_DIAMOND = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cpath d='M60 6l36 54-36 54-36-54z' fill='rgba(255,215,0,0.07)'/%3E%3C/svg%3E\")";
+const WM_SPADE = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cpath d='M70 10c22 27 44 41 44 63a22 22 0 0 1-38 14 52 52 0 0 0 8 27h-28a52 52 0 0 0 8-27 22 22 0 0 1-38-14c0-22 22-36 44-63z' fill='rgba(255,255,255,0.055)'/%3E%3C/svg%3E\")";
+const CABINET_GRADIENT = 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)';
+// Box days sit on black (owner spec) — a whisper of gradient keeps depth so
+// it reads as velvet rather than a dead flat fill.
+const BOX_BASE_GRADIENT = 'linear-gradient(180deg, #17171c 0%, #0c0c10 45%, #050506 100%)';
+// Layer order = paint order (first is on top): gold stage light, vignette,
+// two corner beams, the big watermark suits, the repeating suit tile, base.
+const BOX_CARD_BACKGROUND = [
+  'radial-gradient(120% 80% at 50% 0%, rgba(255,215,0,0.10), transparent 55%)',
+  'radial-gradient(150% 120% at 50% 55%, transparent 58%, rgba(0,0,0,0.42) 100%)',
+  'linear-gradient(112deg, rgba(255,215,0,0.09), transparent 26%)',
+  'linear-gradient(248deg, rgba(255,215,0,0.09), transparent 26%)',
+  WM_DIAMOND,
+  WM_SPADE,
+  SUIT_TILE,
+  BOX_BASE_GRADIENT,
+].join(', ');
+const BOX_CARD_BG_SIZE = 'auto, auto, auto, auto, 130px 130px, 160px 160px, 128px 128px, auto';
+const BOX_CARD_BG_POS = '0 0, 0 0, 0 0, 0 0, -34px 96px, calc(100% + 44px) calc(100% - 36px), 0 0, 0 0';
+const BOX_CARD_BG_REPEAT = 'no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat, no-repeat';
+
+// Chip and reveal colours per prize, matching the wheel's slice palette so
+// the boxes read as the same machine.
+const PRIZE_STYLE = {
+  'K5':        { bg: '#00e5ff', fg: '#06283a' },
+  'K10':       { bg: '#00e676', fg: '#052e16' },
+  'K20':       { bg: '#d500f9', fg: '#ffffff' },
+  'K50':       { bg: '#ff6d00', fg: '#ffffff' },
+  'K100':      { bg: '#ffd600', fg: '#4a3000' },
+  'K200':      { bg: '#ffab00', fg: '#4a3000' },
+  'K10,000':   { bg: 'linear-gradient(180deg,#ff5252,#c50e1f 55%,#7a0212)', fg: '#ffd700' },
+  'TRY AGAIN': { bg: '#78909c', fg: '#eceff1' },
+};
+function prizeChipStyle(label, fontSize, extra) {
+  const p = PRIZE_STYLE[label] || PRIZE_STYLE['TRY AGAIN'];
+  return {
+    background: p.bg, color: p.fg, fontWeight: 900, fontSize,
+    padding: '3px 9px', borderRadius: 7, whiteSpace: 'nowrap',
+    border: '1px solid rgba(0,0,0,0.35)',
+    boxShadow: '0 2px 6px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.35)',
+    letterSpacing: '0.02em',
+    ...extra,
+  };
+}
+
+// ============================================================================
+// MYSTERY BOX STAGE — the alternate game's centre stage. Purely visual: the
+// outcome is the server's spin result exactly as with the wheel; whichever
+// box the player picks reveals it. Phases (driven by the parent):
+//   intro   — the prize labels drop into the boxes (the player sees what's
+//             in play, matching the wheel's slice artwork)
+//   shuffle — the boxes swap positions rapidly for 4 seconds
+//   pick    — boxes pulse, waiting for the tap
+//   opening — chosen box wobbles while /api/spin answers
+//   reveal  — chosen box opens on the result; the others show the rest
+// ============================================================================
+// The mystery box art: the owner-approved "A1 Polished" 3D gift box
+// (picked from the design page 2026-08-28). Glossy gold with the red ribbon
+// the trigger icon already uses, drawn with real depth: a receding side
+// wall, a lid with a visible top surface, ribbon wrapped over every face,
+// a folded bow with tails, twin gloss streaks and static sparkles. Body and
+// lid are separate layers so the reveal can fly the lid up and off; gold
+// light and a heap of coins burst from the opening on a win, a dark empty
+// mouth on a loss. The nine copies share gradient ids; they are identical,
+// so every url(#...) resolving to the first copy renders correctly.
+function BoxSVG({ open, isWin, sparkle }) {
+  const svgStyle = { position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', display: 'block' };
+  const spk = (d, delay) => (
+    <path
+      d={d}
+      fill="#fffbe6"
+      opacity="0.5"
+      style={sparkle ? { transformBox: 'fill-box', transformOrigin: '50% 50%', animation: `bwSpk 2.3s ${delay} ease-in-out infinite` } : undefined}
+    />
+  );
+  return (
+    <div style={{ position: 'absolute', left: '-3%', top: '-1%', width: '106%', height: '102%', pointerEvents: 'none' }}>
+      <svg viewBox="0 0 120 116" aria-hidden="true" style={svgStyle}>
+        <defs>
+          <linearGradient id="bwbFront" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#fde047" /><stop offset="0.55" stopColor="#eab308" /><stop offset="1" stopColor="#a16207" />
+          </linearGradient>
+          <linearGradient id="bwbSide" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#ca8a04" /><stop offset="1" stopColor="#7c4a0a" />
+          </linearGradient>
+          <linearGradient id="bwbLidF" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#fef9c3" /><stop offset="0.5" stopColor="#fde047" /><stop offset="1" stopColor="#eab308" />
+          </linearGradient>
+          <linearGradient id="bwbLidT" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#fffbe6" /><stop offset="1" stopColor="#fde68a" />
+          </linearGradient>
+          <linearGradient id="bwbLidS" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#eab308" /><stop offset="1" stopColor="#a16207" />
+          </linearGradient>
+          <linearGradient id="bwbRibF" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#f87171" /><stop offset="0.5" stopColor="#dc2626" /><stop offset="1" stopColor="#991b1b" />
+          </linearGradient>
+          <linearGradient id="bwbRibD" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#b91c1c" /><stop offset="1" stopColor="#7f1d1d" />
+          </linearGradient>
+          <linearGradient id="bwbRibT" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ef4444" /><stop offset="1" stopColor="#b91c1c" />
+          </linearGradient>
+          <radialGradient id="bwbCoin" cx="0.35" cy="0.3" r="0.95">
+            <stop offset="0" stopColor="#fff3b0" /><stop offset="0.55" stopColor="#ffd700" /><stop offset="1" stopColor="#b8860b" />
+          </radialGradient>
+          <radialGradient id="bwbGlow">
+            <stop offset="0" stopColor="#fff6c9" /><stop offset="0.45" stopColor="rgba(255,215,0,0.9)" /><stop offset="0.8" stopColor="rgba(255,215,0,0)" />
+          </radialGradient>
+        </defs>
+
+        {/* open top: dark interior; glow + coin heap fade in on a win */}
+        <path d="M10,42 L34,34 L110,34 L86,42 Z" fill="#170c03" />
+        {open && isWin && (
+          <g style={{ animation: 'bwBoxMouth 0.5s 0.3s ease-out both' }}>
+            <ellipse cx="58" cy="38" rx="40" ry="6.5" fill="url(#bwbGlow)" />
+            <circle cx="46" cy="38" r="5.5" fill="url(#bwbCoin)" stroke="#7a5a10" strokeWidth="1.3" />
+            <circle cx="60" cy="36.5" r="5.5" fill="url(#bwbCoin)" stroke="#7a5a10" strokeWidth="1.3" />
+            <circle cx="73" cy="38" r="5.5" fill="url(#bwbCoin)" stroke="#7a5a10" strokeWidth="1.3" />
+          </g>
+        )}
+
+        {/* side wall + wrapped ribbon */}
+        <path d="M86,42 L110,34 L110,96 L86,104 Z" fill="url(#bwbSide)" />
+        <path d="M86,64 L110,56 L110,72 L86,80 Z" fill="url(#bwbRibD)" />
+        <path d="M86,42 L110,34 L110,96 L86,104 Z" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
+
+        {/* front face: seam shadow under the lid, twin gloss, ribbon */}
+        <rect x="10" y="42" width="76" height="62" rx="3.5" fill="url(#bwbFront)" />
+        <rect x="10" y="42" width="76" height="62" rx="3.5" fill="none" stroke="rgba(0,0,0,0.18)" strokeWidth="1" />
+        <rect x="10" y="46" width="76" height="4.5" fill="rgba(0,0,0,0.14)" />
+        <path d="M17,50 L27,50 L23,96 L13,96 Z" fill="rgba(255,255,255,0.3)" />
+        <path d="M30,52 L34,52 L31.5,84 L27.5,84 Z" fill="rgba(255,255,255,0.18)" />
+        <rect x="41" y="42" width="14" height="62" fill="url(#bwbRibF)" />
+        <path d="M45,42 h2 v62 h-2 Z" fill="rgba(255,255,255,0.3)" />
+        <rect x="10" y="98" width="76" height="6" rx="3" fill="rgba(0,0,0,0.22)" />
+        {spk('M76,54.7 L76.99,57.01 L79,58 L76.99,58.99 L76,61.3 L75.01,58.99 L73,58 L75.01,57.01 Z', '0s')}
+        {spk('M21,71.6 L21.72,73.28 L23.4,74 L21.72,74.72 L21,76.4 L20.28,74.72 L18.6,74 L20.28,73.28 Z', '0.9s')}
+
+        {/* coins leaping out on a win, staggered after the lid flies */}
+        {open && isWin && [
+          { cx: 42, cy: 36, r: 5.5, fly: 'translate(-22px,-30px)', d: '0.32s' },
+          { cx: 58, cy: 35, r: 5.5, fly: 'translate(2px,-38px)', d: '0.38s' },
+          { cx: 72, cy: 36, r: 5.5, fly: 'translate(20px,-26px)', d: '0.44s' },
+          { cx: 48, cy: 36, r: 4.2, fly: 'translate(-32px,-18px)', d: '0.35s' },
+          { cx: 66, cy: 36, r: 4.2, fly: 'translate(32px,-15px)', d: '0.47s' },
+        ].map((c) => (
+          <circle key={c.cx} cx={c.cx} cy={c.cy} r={c.r} fill="url(#bwbCoin)" stroke="#7a5a10" strokeWidth="1"
+            style={{ '--fly': c.fly, transformBox: 'fill-box', animation: `bwCoinFly 0.5s ${c.d} ease-out both` }} />
+        ))}
+      </svg>
+
+      {/* lid layer: pops up and off on the reveal */}
+      <div style={{ position: 'absolute', inset: 0, ...(open ? { animation: 'bwLidFly 0.6s ease-out both' } : {}) }}>
+        <svg viewBox="0 0 120 116" aria-hidden="true" style={svgStyle}>
+          <path d="M5,30 L29,22 L115,22 L91,30 Z" fill="url(#bwbLidT)" />
+          <path d="M41,30 L65,22 L79,22 L55,30 Z" fill="url(#bwbRibT)" />
+          <path d="M91,30 L115,22 L115,38 L91,46 Z" fill="url(#bwbLidS)" />
+          <rect x="5" y="30" width="86" height="16" rx="2" fill="url(#bwbLidF)" />
+          <rect x="5" y="30" width="86" height="16" rx="2" fill="none" stroke="rgba(0,0,0,0.18)" strokeWidth="1" />
+          <rect x="41" y="30" width="14" height="16" fill="url(#bwbRibF)" />
+          <path d="M45,30 h2 v16 h-2 Z" fill="rgba(255,255,255,0.3)" />
+          <path d="M5,44 h86 v2 h-86 Z" fill="rgba(0,0,0,0.2)" />
+          {/* bow: shadow, tails, folded loops with highlights, knot */}
+          <ellipse cx="48" cy="24" rx="11" ry="2.4" fill="rgba(0,0,0,0.2)" />
+          <path d="M44,22 L36.5,37 L42,37 L46,27 Z" fill="url(#bwbRibD)" />
+          <path d="M52,22 L59.5,37 L54,37 L50,27 Z" fill="url(#bwbRibD)" />
+          <ellipse cx="40" cy="16" rx="9.5" ry="7" transform="rotate(-18 40 16)" fill="#dc2626" />
+          <ellipse cx="40" cy="16" rx="9.5" ry="7" transform="rotate(-18 40 16)" fill="none" stroke="#7f1d1d" strokeWidth="1.4" />
+          <ellipse cx="41.8" cy="17.4" rx="4.8" ry="3.4" transform="rotate(-18 41.8 17.4)" fill="#991b1b" opacity="0.85" />
+          <ellipse cx="37.2" cy="13.2" rx="4" ry="2.3" transform="rotate(-18 37.2 13.2)" fill="#fca5a5" opacity="0.6" />
+          <ellipse cx="56" cy="16" rx="9.5" ry="7" transform="rotate(18 56 16)" fill="#dc2626" />
+          <ellipse cx="56" cy="16" rx="9.5" ry="7" transform="rotate(18 56 16)" fill="none" stroke="#7f1d1d" strokeWidth="1.4" />
+          <ellipse cx="54.2" cy="17.4" rx="4.8" ry="3.4" transform="rotate(18 54.2 17.4)" fill="#991b1b" opacity="0.85" />
+          <ellipse cx="58.8" cy="13.2" rx="4" ry="2.3" transform="rotate(18 58.8 13.2)" fill="#fca5a5" opacity="0.6" />
+          <rect x="44.2" y="15" width="7.6" height="8.4" rx="3" fill="#dc2626" stroke="#7f1d1d" strokeWidth="1.3" />
+          <path d="M46.2,16 h1.6 v6.4 h-1.6 Z" fill="#fca5a5" opacity="0.55" />
+          {spk('M84,23.3 L84.81,25.19 L86.7,26 L84.81,26.81 L84,28.7 L83.19,26.81 L81.3,26 L83.19,25.19 Z', '1.5s')}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function MysteryBoxStage({ phase, chosen, reveal, onPick, onShuffle, isLowEnd }) {
+  // slots[slotIndex] = box id occupying that grid cell.
+  //
+  // The shuffle is deliberately UNTRACKABLE, not merely fast. Players film
+  // these games; anyone who could visually follow "the K10,000 box" through
+  // the shuffle and then lose after picking it would have video that looks
+  // like proof of cheating. So the boxes do not glide between grid cells
+  // (traceable): for the whole shuffle every box continuously flies to fresh
+  // random spots with a centre-heavy bias, so identical boxes cross and
+  // stack over one another dozens of times. Every occlusion severs the
+  // trail; by the scatter, "which box had which prize" is undefined.
+  const [slots, setSlots] = useState(() => [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  const [mode, setMode] = useState('grid'); // grid | scatter (orbit drives styles directly)
+  const boxRefs = useRef([]);
+  useEffect(() => {
+    if (phase === 'intro') { setSlots([0, 1, 2, 3, 4, 5, 6, 7, 8]); setMode('grid'); }
+    if (phase === 'pick') {
+      // The orbit wrote positions behind React's back, so React's diff would
+      // skip any box it believes unmoved. Deal a fresh random arrangement and
+      // place EVERY chest on its grid cell imperatively, then sync state.
+      const perm = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+      for (let j = perm.length - 1; j > 0; j--) {
+        const k = Math.floor(Math.random() * (j + 1));
+        const tv = perm[j]; perm[j] = perm[k]; perm[k] = tv;
+      }
+      for (let i = 0; i < 9; i++) {
+        const el = boxRefs.current[i];
+        if (!el) continue;
+        const slot = perm.indexOf(i);
+        el.style.transition = 'left 0.45s cubic-bezier(.2,.8,.3,1), top 0.45s cubic-bezier(.2,.8,.3,1)';
+        el.style.left = (2.5 + (slot % 3) * 33.5) + '%';
+        el.style.top = (7 + Math.floor(slot / 3) * 30) + '%';
+        el.style.zIndex = '1';
+      }
+      setSlots(perm);
+      setMode('grid');
+    }
+    if (phase !== 'shuffle') return undefined;
+    // The shuffle: all chests whirl round the centre, accelerating to a speed
+    // where frame-to-frame motion exceeds the spacing between chests — on any
+    // recording that aliases (the wagon-wheel effect), so no chest can be
+    // followed even in slow motion. Mid-spin the ring collapses once through
+    // the centre (nine identical chests in one spot), which severs identity
+    // outright. Driven per-frame via refs, same technique as the wheel; the
+    // loop spins until the phase changes — no timers to race or throttle.
+    let raf = null;
+    let active = true;
+    let angle = 0;
+    let last = null;
+    const t0 = performance.now();
+    const R0 = 30;                         // ring radius, % of the stage
+    // ~2.2 rev/s (owner asked twice for calmer; still untrackable): adjacent
+    // boxes are 40° apart, so at 2.2 rev/s a 30fps recording still moves each
+    // box ~26° per frame — most of the gap — and with the mid-spin collapse
+    // on top, no box can be followed across frames.
+    const PEAK_RPS = isLowEnd ? 1.6 : 2.2;
+    const step = (now) => {
+      if (!active) return;
+      const t = (now - t0) / 1000;
+      const dt = last === null ? 0 : Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const rps = Math.min(PEAK_RPS, 0.6 + t * 2.0); // quick ramp to full speed
+      angle += rps * 360 * dt;
+      // One collapse through the centre around the midpoint of the spin.
+      const collapse = Math.max(0, 1 - Math.abs(t - 1.7) / 0.35);
+      const R = R0 * (1 - collapse);
+      for (let i = 0; i < 9; i++) {
+        const el = boxRefs.current[i];
+        if (!el) continue;
+        const a = (angle + i * 40) * (Math.PI / 180);
+        el.style.transition = 'none';
+        el.style.left = (35.5 + R * Math.cos(a)) + '%';
+        el.style.top = (37 + R * 0.85 * Math.sin(a)) + '%';
+        el.style.zIndex = String(Math.sin(a) > 0 ? 3 : 1);
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => { active = false; if (raf) cancelAnimationFrame(raf); };
+  }, [phase, isLowEnd]);
+
+  // 'ready' keeps the intro caption: the prizes are still on show, and the
+  // start button no longer lives in this slot to fill it.
+  const caption = (phase === 'intro' || phase === 'ready') ? 'TODAY’S PRIZES!'
+    : phase === 'sink' ? 'THE PRIZES GO INTO THE BOXES…'
+    : phase === 'shuffle' ? 'SHUFFLING…'
+    : phase === 'pick' ? 'PICK A BOX!'
+    : phase === 'opening' ? 'OPENING…'
+    : phase === 'reveal' ? (reveal && reveal.isWin ? 'YOU FOUND IT!' : 'NOT THIS TIME') : '';
+
+  // Decoy label for a non-chosen box once the reveal is on.
+  const decoyFor = (id) => {
+    if (!reveal) return null;
+    const others = [0, 1, 2, 3, 4, 5, 6, 7, 8].filter((i) => i !== chosen);
+    return reveal.decoys[others.indexOf(id)] || 'TRY AGAIN';
+  };
+
+  return (
+    <div className="relative mx-auto" style={{ width: '100%', maxWidth: 370, aspectRatio: '1', marginTop: 18 }}>
+      {/* Spotlight, matching the wheel's */}
+      <div className="absolute pointer-events-none" style={{
+        inset: '-20%',
+        background: 'radial-gradient(circle at 50% 48%, rgba(200,210,230,0.15) 0%, rgba(150,160,180,0.07) 30%, transparent 60%)',
+      }} />
+
+      {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((id) => {
+        const slot = slots.indexOf(id);
+        const col = slot % 3, row = Math.floor(slot / 3);
+        const isChosen = chosen === id;
+        const revealed = phase === 'reveal';
+        const label = revealed ? (isChosen ? reveal.label : decoyFor(id)) : null;
+        const isWinLabel = revealed && isChosen && reveal.isWin;
+        // Position by shuffle mode: grid cell normally, the centre pile while
+        // gathering/swirling, and a springy glide back out on scatter.
+        let left = 2.5 + col * 33.5, top = 7 + row * 30;
+        let trans = 'left 0.14s ease-in-out, top 0.14s ease-in-out';
+        let z = isChosen ? 3 : 1;
+        return (
+          <button
+            key={id}
+            ref={(el) => { boxRefs.current[id] = el; }}
+            type="button"
+            onClick={() => onPick(id)}
+            disabled={phase !== 'pick'}
+            aria-label={'Box ' + (id + 1)}
+            className="absolute"
+            style={{
+              width: '29%', height: '26%',
+              left: left + '%',
+              top: top + '%',
+              transition: trans,
+              cursor: phase === 'pick' ? 'pointer' : 'default',
+              zIndex: z,
+              background: 'transparent', border: 0, padding: 0,
+            }}
+          >
+            <div style={{
+              position: 'relative', width: '100%', height: '100%',
+              ...(phase === 'pick' && !isLowEnd ? { animation: `bwBoxPulse 1.4s ${(id % 3) * 0.15}s ease-in-out infinite` } : {}),
+              ...(phase === 'opening' && isChosen ? { animation: 'bwBoxWobble 0.4s ease-in-out infinite' } : {}),
+              ...(revealed && isChosen ? { transform: 'scale(1.12)' } : {}),
+              ...(revealed && !isChosen ? { opacity: 0.55 } : {}),
+              transition: 'transform 0.25s ease-out, opacity 0.25s ease-out',
+            }}>
+              {/* Prize chip, coloured like its wheel slice: drops onto the box
+                  and SITS there until the shuffle button sinks it inside. */}
+              {(phase === 'intro' || phase === 'ready' || phase === 'sink') && (
+                <div style={{
+                  position: 'absolute', left: '50%', top: -10, zIndex: 4,
+                  animation: phase === 'sink'
+                    ? `bwBoxSink 0.5s ${(id % 3) * 0.07}s ease-in both`
+                    : `bwBoxDropStay 0.9s ${(id % 9) * 0.06}s ease-out both`,
+                  ...prizeChipStyle(BOX_LABELS[id], 17),
+                }}>{BOX_LABELS[id]}</div>
+              )}
+
+              {/* Ground shadow */}
+              <div style={{
+                position: 'absolute', left: '10%', right: '10%', bottom: '-4%', height: '10%',
+                background: 'radial-gradient(ellipse, rgba(0,0,0,.45) 0%, transparent 70%)',
+                filter: 'blur(3px)',
+              }} />
+
+              {/* The gift box — the lid flies off when this box is the revealed pick */}
+              <BoxSVG open={revealed && isChosen} isWin={isWinLabel} sparkle={phase === 'pick' && !isLowEnd} />
+
+              {/* Reveal: gold burst behind the chosen box's prize, chips
+                  coloured like their wheel slices everywhere */}
+              {revealed && isChosen && (
+                <div style={{
+                  position: 'absolute', left: '50%', top: '40%', width: '150%', aspectRatio: '1',
+                  transform: 'translate(-50%,-50%)', zIndex: 4, pointerEvents: 'none',
+                  animation: 'bwBoxPop 0.4s 0.3s ease-out both',
+                  background: isWinLabel
+                    ? 'radial-gradient(circle, rgba(255,215,0,.55) 0%, rgba(255,215,0,.18) 45%, transparent 70%)'
+                    : 'radial-gradient(circle, rgba(148,163,184,.35) 0%, transparent 65%)',
+                }} />
+              )}
+              {revealed && label && (
+                <div style={{
+                  position: 'absolute', left: '50%', top: isChosen ? '30%' : '40%',
+                  zIndex: 5,
+                  animation: isChosen ? 'bwChipPop 0.4s 0.35s ease-out both' : 'bwBoxPop 0.5s 0.45s ease-out both',
+                  ...prizeChipStyle(label, isChosen ? 19 : 12, isChosen ? { padding: '6px 14px', boxShadow: '0 4px 12px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.35)' } : { opacity: 0.9 }),
+                }}>{label}</div>
+              )}
+            </div>
+          </button>
+        );
+      })}
+
+      {/* Phase caption — sits under the MYSTERY BOX header, above the boxes. */}
+      <div className="absolute left-0 right-0 text-center" style={{ top: '-5%', zIndex: 6 }}>
+        <span className="font-black uppercase tracking-widest" style={{
+          fontSize: 14,
+          color: (phase === 'pick' || phase === 'shuffle') ? '#FEF200' : 'rgba(255,255,255,0.8)',
+          textShadow: '0 2px 6px rgba(0,0,0,.7)',
+          ...((phase === 'pick' || phase === 'shuffle') && !isLowEnd ? { animation: 'stopFlash 0.5s ease-in-out infinite' } : {}),
+        }}>{caption}</span>
+      </div>
+
+      {/* The start button, over the middle of the 3x3 grid (owner spec). The
+          player starts the shuffle themselves, so they get all the time they
+          want to read the prizes first. Centred on the grid's true middle —
+          the cells span 2.5–98.5% across and 7–93% down — rather than on the
+          stage, so it sits on the centre box however the stage is sized.
+          Above every box (they top out at z-index 4) and only mounted while
+          the boxes are idle, so it can never swallow a pick. */}
+      {phase === 'ready' && (
+        <div className="absolute" style={{
+          left: '50.5%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 7,
+        }}>
+          <button
+            type="button"
+            onClick={onShuffle}
+            className="font-black uppercase rounded-xl transition-all hover:scale-[1.04] active:scale-95"
+            style={{
+              fontSize: 15, padding: '9px 22px', color: '#fff', border: 0,
+              // Green, and the same green as CLAIM PRIZE! (green-500 →
+              // emerald-600) so the widget's two "go" buttons match. Gold
+              // stays reserved for prizes.
+              background: 'linear-gradient(135deg, #22c55e, #059669)',
+              boxShadow: '0 6px 18px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.35)',
+              letterSpacing: '0.05em', cursor: 'pointer', whiteSpace: 'nowrap',
+              ...(isLowEnd ? {} : { animation: 'playBtnPulse 2.4s ease-in-out infinite' }),
+            }}
+          >CLICK HERE TO PLAY</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -481,6 +945,18 @@ export default function WheelWidget({ prefillUserId = null }) {
     const mem = navigator.deviceMemory || 8;
     return cores <= 4 || mem <= 3;
   });
+
+  // Which game this wheel-day shows: the wheel or the mystery boxes. Purely a
+  // presentation choice — both games ride the same /api/spin outcome. The
+  // rotation flips at the 09:00 CAT reset; ?game=wheel|box overrides it.
+  const [game] = useState(() => {
+    if (typeof window === 'undefined') return 'wheel';
+    return resolveGame(window.location.search, getWheelDayClient());
+  });
+  // Mystery-box state: idle → intro → shuffle → pick → opening → reveal.
+  const [boxPhase, setBoxPhase] = useState('idle');
+  const [chosenBox, setChosenBox] = useState(null);
+  const [boxReveal, setBoxReveal] = useState(null);
 
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
@@ -844,7 +1320,25 @@ export default function WheelWidget({ prefillUserId = null }) {
 
   // Start playing — identity is already established (token in real mode, test id in test mode)
   const startPlaying = useCallback(() => {
+    if (game === 'box') {
+      setChosenBox(null);
+      setBoxReveal(null);
+      setScreen('boxes');
+      // The prizes drop onto the boxes and STAY until the player presses the
+      // shuffle button (owner spec: give them time to actually read what is
+      // in play). No auto-advance past 'ready'.
+      setBoxPhase('intro');
+      setTimeout(() => setBoxPhase('ready'), 2000);
+      return;
+    }
     setScreen('spinning');
+  }, [game]);
+
+  // The shuffle button: chips sink into the boxes, then the whirl, then pick.
+  const startShuffle = useCallback(() => {
+    setBoxPhase('sink');
+    setTimeout(() => setBoxPhase('shuffle'), 550);
+    setTimeout(() => setBoxPhase('pick'), 4550); // 0.55s sink + the 4s shuffle
   }, []);
 
   // Land the wheel on the spin the SERVER actually recorded.
@@ -923,6 +1417,12 @@ export default function WheelWidget({ prefillUserId = null }) {
           return;
         }
         if (data.error) {
+          if (isTestMode) {
+            // Reviewers cannot authenticate test spins — simulate locally so
+            // wins are reviewable. Never reached by real traffic.
+            pendingResultRef.current = simulateTestOutcome(forceWinParam);
+            return;
+          }
           reportClientError('spin_failed', data.error || 'unknown', null, spunCustomerId);
           // Land on a random loss segment on error too. resolveLandingSegment
           // with an invalid index always substitutes from the shared loss set,
@@ -937,6 +1437,10 @@ export default function WheelWidget({ prefillUserId = null }) {
         pendingResultRef.current = { winIndex: data.segmentIndex, data };
       })
       .catch(() => {
+        if (isTestMode) {
+          pendingResultRef.current = simulateTestOutcome(forceWinParam);
+          return;
+        }
         reportClientError('spin_network_error', 'spin request failed', null, spunCustomerId);
         // The RESPONSE was lost, not necessarily the spin — /api/spin may have
         // committed it before the connection died. Ask what happened instead of
@@ -946,12 +1450,109 @@ export default function WheelWidget({ prefillUserId = null }) {
       });
   }, [isTestMode, forceWinParam, testCustomerId, landOnRecordedSpin]);
 
+  // Mystery-box result application: the same segment resolution the wheel's
+  // animation loop performs, minus the physics — the chosen box opens on it.
+  const applyBoxOutcome = useCallback((winIndex, data) => {
+    const landing = resolveLandingSegment(winIndex);
+    const base = WHEEL_SEGMENTS[landing.index];
+    if (landing.substituted) {
+      reportClientError('impossible_segment', `box index ${winIndex}`, null, null);
+    }
+    const isWin = !landing.substituted && Boolean(data && (data.win ?? data.won));
+    const seg = isWin
+      ? { ...base, isLoss: false, prize: { kwacha: data.prize?.kwacha ?? base.prize?.kwacha ?? 0 } }
+      : { ...base, isLoss: true, prize: null };
+    winSegmentRef.current = seg;
+    const label = isWin ? 'K' + Number(seg.prize.kwacha).toLocaleString('en-US') : 'TRY AGAIN';
+    setBoxReveal({ label, isWin, decoys: boxDecoys(label) });
+    setBoxPhase('reveal');
+    // Four seconds on the opened boxes (owner spec) — long enough to read
+    // the chosen prize AND what the other boxes held — then the result card.
+    setTimeout(() => {
+      setScreen('result');
+      setSpinResult(seg);
+      if (!isTestMode) ackResultShown(authTokenRef.current, seg);
+      if (!seg.isLoss) {
+        setShowFlash(true);
+        setWheelConfetti(true);
+        setShaking(true);
+        setTimeout(() => setShowFlash(false), 400);
+        setTimeout(() => setWheelConfetti(false), 3000);
+        setTimeout(() => setShaking(false), 150);
+        const cx = window.innerWidth / 2, cy = window.innerHeight * 0.45;
+        const small = window.innerWidth < 600;
+        spawnParticles(cx, cy, small ? 12 : 25, { spread: 250, speed: 9, life: small ? 25 : 40, gravity: 0.2 });
+        if (!small) spawnParticles(cx, cy, 15, { spread: 180, speed: 6, life: 30, gravity: 0.15 });
+        startLoop();
+        if (seg.prize?.kwacha) spawnFloatingNumber('+K' + seg.prize.kwacha, cx, cy - 40, '#fbbf24');
+      }
+    }, 4000);
+  }, [isTestMode, spawnParticles, startLoop, spawnFloatingNumber]);
+
+  // The box tap — the mystery-box counterpart of stopWheel: same API call,
+  // same dedupe/recovery paths, different presentation.
+  const chooseBox = useCallback((id) => {
+    if (boxPhase !== 'pick') return;
+    setChosenBox(id);
+    setBoxPhase('opening');
+    const spunCustomerId = customerIdFromToken(authTokenRef.current);
+    // landOnRecordedSpin parks a recovered result in pendingResultRef for the
+    // wheel's animation loop; there is no loop here, so collect it ourselves.
+    const applyPending = () => {
+      const p = pendingResultRef.current;
+      if (p) {
+        pendingResultRef.current = null;
+        applyBoxOutcome(p.winIndex, p.data);
+      }
+    };
+    postSpinWithRetry(
+      isTestMode
+        ? { customerId: testCustomerId, fingerprint: fingerprintRef.current, test: true, ...(forceWinParam ? { forceWin: Number(forceWinParam) || true } : {}) }
+        : { token: authTokenRef.current, fingerprint: fingerprintRef.current }
+    )
+      .then(res => res.json())
+      .then(data => {
+        if (data.error === 'already_spun') {
+          markSpun(spunCustomerId);
+          landOnRecordedSpin(spunCustomerId, true).then(applyPending);
+          return;
+        }
+        if (data.error) {
+          if (isTestMode) {
+            // Reviewers cannot authenticate test spins — simulate locally so
+            // wins are reviewable. Never reached by real traffic.
+            const sim = simulateTestOutcome(forceWinParam);
+            applyBoxOutcome(sim.winIndex, sim.data);
+            return;
+          }
+          reportClientError('spin_failed', data.error || 'unknown', null, spunCustomerId);
+          const fallback = resolveLandingSegment(-1);
+          applyBoxOutcome(fallback.index, { won: false });
+          return;
+        }
+        markSpun(spunCustomerId);
+        applyBoxOutcome(data.segmentIndex, data);
+      })
+      .catch(() => {
+        if (isTestMode) {
+          const sim = simulateTestOutcome(forceWinParam);
+          applyBoxOutcome(sim.winIndex, sim.data);
+          return;
+        }
+        reportClientError('spin_network_error', 'spin request failed', null, spunCustomerId);
+        landOnRecordedSpin(spunCustomerId).then(applyPending);
+      });
+  }, [boxPhase, isTestMode, testCustomerId, forceWinParam, landOnRecordedSpin, applyBoxOutcome]);
+
   // CLAIM — acknowledge the result and close the widget (the near-identical
   // 'done' card only shows if the user re-opens it). Test mode loops to prompt.
   const claimPrize = useCallback(() => {
     if (!spinResult) return;
     setSpinResult(null);
     if (isTestMode) {
+      setBoxPhase('idle');
+      setChosenBox(null);
+      setBoxReveal(null);
       setScreen('prompt');
       return;
     }
@@ -977,6 +1578,9 @@ export default function WheelWidget({ prefillUserId = null }) {
     pendingResultRef.current = null;
     winSegmentRef.current = null;
     setRecoveryOutcome(null);
+    setBoxPhase('idle');
+    setChosenBox(null);
+    setBoxReveal(null);
     setScreen('prompt');
   }, []);
 
@@ -1207,7 +1811,14 @@ export default function WheelWidget({ prefillUserId = null }) {
       {spinResult && (
         <div className="fixed inset-0 z-[58] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', animation: 'fadeIn 0.3s ease-out' }}>
           <div className="text-center px-3 py-6 rounded-3xl max-w-xs w-full mx-4" style={{
-            background: 'linear-gradient(180deg, rgba(30,40,60,0.95), rgba(15,20,35,0.98))',
+            // Box days: the result card wears the same black casino backdrop
+            // as the main card, so the takeover reads as one surface.
+            background: game === 'box' ? BOX_CARD_BACKGROUND : 'linear-gradient(180deg, rgba(30,40,60,0.95), rgba(15,20,35,0.98))',
+            ...(game === 'box' ? {
+              backgroundSize: BOX_CARD_BG_SIZE,
+              backgroundPosition: BOX_CARD_BG_POS,
+              backgroundRepeat: BOX_CARD_BG_REPEAT,
+            } : {}),
             border: `2px solid ${spinResult.isLoss ? 'rgba(156,163,175,0.3)' : 'rgba(251,191,36,0.3)'}`,
             boxShadow: spinResult.isLoss
               ? '0 0 60px rgba(100,100,100,0.1), 0 20px 60px rgba(0,0,0,0.5)'
@@ -1323,7 +1934,15 @@ export default function WheelWidget({ prefillUserId = null }) {
       {/* ============================================================ */}
       <div className="relative rounded-2xl" style={{
         width: 380, maxWidth: '95vw',
-        background: 'linear-gradient(180deg, #2d3348 0%, #1e2233 40%, #1a1e2e 100%)',
+        // Box days get the quiet casino backdrop (suit tile + glow +
+        // vignette, all inline — see BOX_CARD_BACKGROUND); wheel days keep
+        // the plain cabinet exactly as approved.
+        background: game === 'box' ? BOX_CARD_BACKGROUND : CABINET_GRADIENT,
+        ...(game === 'box' ? {
+          backgroundSize: BOX_CARD_BG_SIZE,
+          backgroundPosition: BOX_CARD_BG_POS,
+          backgroundRepeat: BOX_CARD_BG_REPEAT,
+        } : {}),
         boxShadow: '0 0 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.06)',
         border: '3px solid #3a3f52',
         ...(shaking ? { animation: 'winShake 0.15s ease-out' } : {}),
@@ -1407,10 +2026,13 @@ export default function WheelWidget({ prefillUserId = null }) {
               letterSpacing: '-0.02em',
               color: BWANA_YELLOW,
               filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.6))',
-            }}><FitText max={26} fill={0.98}>SPIN AND WIN</FitText></h1>
+            }}><FitText max={26} fill={0.98}>{game === 'box' ? 'MYSTERY BOX' : 'SPIN AND WIN'}</FitText></h1>
           </div>
 
-          {/* ============ WHEEL AREA ============ */}
+          {/* ============ GAME AREA — today's game per lib/gameRotation ============ */}
+          {game === 'box' ? (
+          <MysteryBoxStage phase={boxPhase} chosen={chosenBox} reveal={boxReveal} onPick={chooseBox} onShuffle={startShuffle} isLowEnd={isLowEnd} />
+          ) : (
           <div className="relative mx-auto" style={{ width: '100%', maxWidth: WHEEL_SIZE + 50, aspectRatio: '1' }}>
 
             {/* === SPOTLIGHT behind wheel === */}
@@ -1775,6 +2397,7 @@ export default function WheelWidget({ prefillUserId = null }) {
               </button>
             </div>
           </div>
+          )}
 
           {/* House promo. Read while the wheel is still turning — the one moment
               the customer is looking at the screen with nothing else to do.
