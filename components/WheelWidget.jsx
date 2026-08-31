@@ -656,7 +656,9 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, onShuffle, isLowEnd })
     return () => { active = false; if (raf) cancelAnimationFrame(raf); };
   }, [phase, isLowEnd]);
 
-  const caption = phase === 'intro' ? 'TODAY’S PRIZES!'
+  // 'ready' keeps the intro caption: the prizes are still on show, and the
+  // start button no longer lives in this slot to fill it.
+  const caption = (phase === 'intro' || phase === 'ready') ? 'TODAY’S PRIZES!'
     : phase === 'sink' ? 'THE PRIZES GO INTO THE BOXES…'
     : phase === 'shuffle' ? 'SHUFFLING…'
     : phase === 'pick' ? 'PICK A BOX!'
@@ -764,33 +766,41 @@ function MysteryBoxStage({ phase, chosen, reveal, onPick, onShuffle, isLowEnd })
         );
       })}
 
-      {/* Phase caption — sits under the MYSTERY BOX header, above the boxes.
-          While the prizes are on show it becomes the SHUFFLE button (owner
-          spec: the player starts the shuffle themselves, so they get all the
-          time they want to read the prizes). Styled like the PLAY! button. */}
+      {/* Phase caption — sits under the MYSTERY BOX header, above the boxes. */}
       <div className="absolute left-0 right-0 text-center" style={{ top: '-5%', zIndex: 6 }}>
-        {phase === 'ready' ? (
-          <button
-            type="button"
-            onClick={onShuffle}
-            className="font-black uppercase rounded-xl transition-all hover:scale-[1.04] active:scale-95"
-            style={{
-              fontSize: 15, padding: '7px 26px', color: '#fff', border: 0,
-              background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-              boxShadow: '0 4px 14px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.35)',
-              letterSpacing: '0.05em', cursor: 'pointer',
-              ...(isLowEnd ? {} : { animation: 'playBtnPulse 2.4s ease-in-out infinite' }),
-            }}
-          >SHUFFLE THE BOXES!</button>
-        ) : (
         <span className="font-black uppercase tracking-widest" style={{
           fontSize: 14,
           color: (phase === 'pick' || phase === 'shuffle') ? '#FEF200' : 'rgba(255,255,255,0.8)',
           textShadow: '0 2px 6px rgba(0,0,0,.7)',
           ...((phase === 'pick' || phase === 'shuffle') && !isLowEnd ? { animation: 'stopFlash 0.5s ease-in-out infinite' } : {}),
         }}>{caption}</span>
-        )}
       </div>
+
+      {/* The start button, over the middle of the 3x3 grid (owner spec). The
+          player starts the shuffle themselves, so they get all the time they
+          want to read the prizes first. Centred on the grid's true middle —
+          the cells span 2.5–98.5% across and 7–93% down — rather than on the
+          stage, so it sits on the centre box however the stage is sized.
+          Above every box (they top out at z-index 4) and only mounted while
+          the boxes are idle, so it can never swallow a pick. */}
+      {phase === 'ready' && (
+        <div className="absolute" style={{
+          left: '50.5%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 7,
+        }}>
+          <button
+            type="button"
+            onClick={onShuffle}
+            className="font-black uppercase rounded-xl transition-all hover:scale-[1.04] active:scale-95"
+            style={{
+              fontSize: 15, padding: '9px 22px', color: '#fff', border: 0,
+              background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+              boxShadow: '0 6px 18px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.35)',
+              letterSpacing: '0.05em', cursor: 'pointer', whiteSpace: 'nowrap',
+              ...(isLowEnd ? {} : { animation: 'playBtnPulse 2.4s ease-in-out infinite' }),
+            }}
+          >CLICK HERE TO PLAY</button>
+        </div>
+      )}
     </div>
   );
 }
