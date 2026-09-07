@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import '@/app/promo/promo.css';
 import { PROMO_SEGMENTS, SEGMENT_DEG, landingAngle, angleAt, TOTAL_MS } from '@/lib/promoSpin';
 import { readPromoSpun, writePromoSpun } from '@/lib/promoOnce';
+import { coord } from '@/lib/svgCoord';
+import { isLowEndDevice, LOW_END_FIRST_RENDER } from '@/lib/deviceTier';
+import { EARLY_TAP_ATTR, EARLY_TAP_SCRIPT, takeQueuedTap } from '@/lib/earlyTap';
 
 // ============================================================================
 // The wheel itself is a faithful copy of the money wheel's build
@@ -60,15 +63,15 @@ export default function PromoWheel({ site }) {
   const wheelRef = useRef(null);
   const pointerElRef = useRef(null);
   const rafRef = useRef(null);
+  const spinningRef = useRef(false);
 
   // Same low-end heuristic as the money wheel — drops the expensive SVG
-  // filters and SMIL animation on weak phones.
-  const [isLowEnd] = useState(() => {
-    if (typeof navigator === 'undefined') return false;
-    const cores = navigator.hardwareConcurrency || 8;
-    const mem = navigator.deviceMemory || 8;
-    return cores <= 4 || mem <= 3;
-  });
+  // filters and SMIL animation on weak phones. Asked AFTER mount, never during
+  // render: Node ships a `navigator` too, so rendering the answer would let the
+  // server decide the tier and hand every capable phone a tree it disagrees
+  // with (see lib/deviceTier.js).
+  const [isLowEnd, setIsLowEnd] = useState(LOW_END_FIRST_RENDER);
+  useEffect(() => { setIsLowEnd(isLowEndDevice(navigator)); }, []);
 
   // Test mode, like the money wheel's: ?test=1 ignores the one-spin-per-visitor
   // memory (fresh spin every reload) and sends no funnel events, so design
@@ -88,11 +91,17 @@ export default function PromoWheel({ site }) {
     return () => mq.removeEventListener('change', apply);
   }, []);
 
-  // Returning visitor: they already won — go straight to the claim.
+  // Returning visitor: they already won — go straight to the claim. The ref
+  // lets the early-tap replay below see the lock in the same commit, before
+  // the state update lands.
+  const spentRef = useRef(false);
   useEffect(() => {
     if (isTestMode) return;
     sendEvent('view', site.variant);
-    if (readPromoSpun(window.localStorage, site.variant)) setScreen('result');
+    if (readPromoSpun(window.localStorage, site.variant)) {
+      spentRef.current = true;
+      setScreen('result');
+    }
   }, [site.variant, isTestMode]);
 
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
@@ -112,7 +121,10 @@ export default function PromoWheel({ site }) {
   }, [screen, site.destination, site.variant, isTestMode]);
 
   const spin = useCallback(() => {
-    if (screen !== 'idle') return;
+    // The ref, not just the state: a replayed early tap and a real click can
+    // land in the same commit, and `screen` would still read 'idle' in both.
+    if (spinningRef.current || screen !== 'idle') return;
+    spinningRef.current = true;
     setScreen('spinning');
     if (!isTestMode) {
       writePromoSpun(window.localStorage, new Date().toISOString(), site.variant);
@@ -180,11 +192,23 @@ export default function PromoWheel({ site }) {
     rafRef.current = requestAnimationFrame(frame);
   }, [screen, site.variant, isTestMode]);
 
+  // The tap that landed while the page was still hydrating. Runs after the
+  // returning-visitor effect above, so a visitor who has already spun keeps
+  // their claim screen instead of being handed a second spin.
+  useEffect(() => {
+    if (!takeQueuedTap(window)) return;
+    if (spentRef.current) return;
+    spin();
+  }, [spin]);
+
   const bg = isMobile ? site.background.mobile : site.background.desktop;
   const isSpinning = screen === 'spinning';
 
   return (
     <main className="promo-root" style={{ backgroundImage: `url(${bg})` }}>
+      {/* Runs as soon as the HTML is parsed, long before this component is
+          alive, so the first tap is not thrown away. See lib/earlyTap.js. */}
+      <script dangerouslySetInnerHTML={{ __html: EARLY_TAP_SCRIPT }} />
       <div className="promo-layout">
         <h1 className="promo-head"><b>Free bonus.</b> Spin to win!</h1>
 
@@ -261,8 +285,8 @@ export default function PromoWheel({ site }) {
             {!isSpinning && !isLowEnd && Array.from({ length: 36 }, (_, i) => {
               const deg = i * 10 - 90;
               const lR = 184;
-              const lx = 200 + lR * Math.cos(deg * Math.PI / 180);
-              const ly = 200 + lR * Math.sin(deg * Math.PI / 180);
+              const lx = coord(200 + lR * Math.cos(deg * Math.PI / 180));
+              const ly = coord(200 + lR * Math.sin(deg * Math.PI / 180));
               const colors = ['#fbbf24', '#ffffff', '#ec4899', '#ffffff', '#a855f7', '#ffffff', '#22c55e', '#ffffff', '#3b82f6', '#ffffff', '#f97316', '#ffffff'];
               const c = colors[i % colors.length];
               return (
@@ -276,8 +300,8 @@ export default function PromoWheel({ site }) {
             {isLowEnd && Array.from({ length: 18 }, (_, i) => {
               const deg = i * 20 - 90;
               const lR = 184;
-              const lx = 200 + lR * Math.cos(deg * Math.PI / 180);
-              const ly = 200 + lR * Math.sin(deg * Math.PI / 180);
+              const lx = coord(200 + lR * Math.cos(deg * Math.PI / 180));
+              const ly = coord(200 + lR * Math.sin(deg * Math.PI / 180));
               const colors = ['#fbbf24', '#ec4899', '#a855f7', '#22c55e', '#3b82f6', '#f97316'];
               return (
                 <circle key={`ol-${i}`} cx={lx} cy={ly} r="3.5" fill={colors[i % colors.length]} opacity="0.7" />
@@ -287,8 +311,8 @@ export default function PromoWheel({ site }) {
             {/* Gold pegs at segment dividers — SMIL pulse skipped on low-end */}
             {PROMO_SEGMENTS.map((_, i) => {
               const a = i * SEGMENT_DEG - 90;
-              const px = 200 + 175 * Math.cos(a * Math.PI / 180);
-              const py = 200 + 175 * Math.sin(a * Math.PI / 180);
+              const px = coord(200 + 175 * Math.cos(a * Math.PI / 180));
+              const py = coord(200 + 175 * Math.sin(a * Math.PI / 180));
               return (
                 <g key={`peg${i}`}>
                   <circle cx={px} cy={py} r="5" fill="#1a1e2e" stroke="#b8860b" strokeWidth="1.2" />
@@ -371,8 +395,8 @@ export default function PromoWheel({ site }) {
               {PROMO_SEGMENTS.map((seg, i) => {
                 const sA = i * SEGMENT_DEG - 90;
                 const eA = sA + SEGMENT_DEG;
-                const s = { x: 150 + 148 * Math.cos(sA * Math.PI / 180), y: 150 + 148 * Math.sin(sA * Math.PI / 180) };
-                const e = { x: 150 + 148 * Math.cos(eA * Math.PI / 180), y: 150 + 148 * Math.sin(eA * Math.PI / 180) };
+                const s = { x: coord(150 + 148 * Math.cos(sA * Math.PI / 180)), y: coord(150 + 148 * Math.sin(sA * Math.PI / 180)) };
+                const e = { x: coord(150 + 148 * Math.cos(eA * Math.PI / 180)), y: coord(150 + 148 * Math.sin(eA * Math.PI / 180)) };
                 const path = `M 150 150 L ${s.x} ${s.y} A 148 148 0 0 1 ${e.x} ${e.y} Z`;
                 if (seg.marquee) {
                   return (
@@ -399,8 +423,8 @@ export default function PromoWheel({ site }) {
               {/* Dividers */}
               {PROMO_SEGMENTS.map((_, i) => {
                 const a = i * SEGMENT_DEG - 90;
-                const ex = 150 + 148 * Math.cos(a * Math.PI / 180);
-                const ey = 150 + 148 * Math.sin(a * Math.PI / 180);
+                const ex = coord(150 + 148 * Math.cos(a * Math.PI / 180));
+                const ey = coord(150 + 148 * Math.sin(a * Math.PI / 180));
                 return (
                   <g key={`d${i}`}>
                     <line x1="150" y1="150" x2={ex} y2={ey} stroke="rgba(0,0,0,0.4)" strokeWidth="2.5" />
@@ -506,6 +530,7 @@ export default function PromoWheel({ site }) {
             </svg>
             <button
               type="button"
+              {...{ [EARLY_TAP_ATTR]: '' }}
               onClick={screen === 'idle' ? spin : undefined}
               disabled={screen !== 'idle'}
               aria-label="Spin the wheel"
@@ -524,7 +549,7 @@ export default function PromoWheel({ site }) {
         </div>
 
         <div className="promo-cta">
-          <button type="button" className="promo-spin-btn" onClick={spin} disabled={screen !== 'idle'}>
+          <button type="button" {...{ [EARLY_TAP_ATTR]: '' }} className="promo-spin-btn" onClick={spin} disabled={screen !== 'idle'}>
             {isSpinning ? 'Spinning…' : 'Spin now'}
           </button>
         </div>
